@@ -47,23 +47,23 @@ static void tileview_changed_cb(lv_event_t *e) {
 }
 
 static lv_draw_buf_t *create_fan_bitmap(lv_obj_t *temp_parent) {
-  constexpr int32_t SIZE = 46;
+  constexpr int32_t SIZE = 45;  // Odd size gives exact single center pixel at (22, 22)
 
   lv_obj_t *holder = lv_obj_create(temp_parent);
-  lv_obj_remove_style_all(holder);  // Strip all theme padding/borders so center is exact
+  lv_obj_remove_style_all(holder);
   lv_obj_set_size(holder, SIZE, SIZE);
   lv_obj_set_style_bg_opa(holder, LV_OPA_TRANSP, 0);
 
-  // Subtle circular shroud ring
+  // Subtle circular shroud ring (odd 41x41 centered on 45x45)
   lv_obj_t *shroud = lv_obj_create(holder);
   lv_obj_remove_style_all(shroud);
-  lv_obj_set_size(shroud, 42, 42);
+  lv_obj_set_size(shroud, 41, 41);
   lv_obj_center(shroud);
   lv_obj_set_style_radius(shroud, LV_RADIUS_CIRCLE, 0);
   lv_obj_set_style_border_color(shroud, lv_color_hex(0x334155), 0);
   lv_obj_set_style_border_width(shroud, 2, 0);
 
-  // 4 symmetrical blades arranged at 0°, 90°, 180°, 270°
+  // 4 symmetrical odd-dimensioned blades arranged at 0°, 90°, 180°, 270°
   const int32_t bx[] = { 0, 10, 0, -10 };
   const int32_t by[] = { -10, 0, 10, 0 };
   const int32_t bw[] = { 9, 15, 9, 15 };
@@ -79,10 +79,10 @@ static lv_draw_buf_t *create_fan_bitmap(lv_obj_t *temp_parent) {
     lv_obj_set_style_bg_opa(blade, LV_OPA_COVER, 0);
   }
 
-  // Center motor hub
+  // Center motor hub (odd 13x13 so center pixel is exact)
   lv_obj_t *hub = lv_obj_create(holder);
   lv_obj_remove_style_all(hub);
-  lv_obj_set_size(hub, 14, 14);
+  lv_obj_set_size(hub, 13, 13);
   lv_obj_center(hub);
   lv_obj_set_style_radius(hub, LV_RADIUS_CIRCLE, 0);
   lv_obj_set_style_bg_color(hub, lv_color_hex(0xE2E8F0), 0);
@@ -95,6 +95,7 @@ static lv_draw_buf_t *create_fan_bitmap(lv_obj_t *temp_parent) {
   lv_obj_delete(holder);
   return snap;
 }
+
 
 
 // -------------------------------------------------------------------------
