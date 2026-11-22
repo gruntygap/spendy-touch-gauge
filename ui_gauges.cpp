@@ -47,45 +47,55 @@ static void tileview_changed_cb(lv_event_t *e) {
 }
 
 static lv_draw_buf_t *create_fan_bitmap(lv_obj_t *temp_parent) {
-  constexpr int32_t SIZE = 44;
+  constexpr int32_t SIZE = 46;
 
   lv_obj_t *holder = lv_obj_create(temp_parent);
+  lv_obj_remove_style_all(holder);  // Strip all theme padding/borders so center is exact
   lv_obj_set_size(holder, SIZE, SIZE);
-  lv_obj_set_style_bg_color(holder, lv_color_hex(0x182230), 0);  // Match card background
-  lv_obj_set_style_bg_opa(holder, LV_OPA_COVER, 0);
-  lv_obj_set_style_border_width(holder, 0, 0);
-  lv_obj_set_style_pad_all(holder, 0, 0);
-  lv_obj_remove_flag(holder, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_style_bg_opa(holder, LV_OPA_TRANSP, 0);
 
-  // 4 blades arranged at 0°, 90°, 180°, 270°
-  const int32_t bx[4] = { 0, 11, 0, -11 };
-  const int32_t by[4] = { -11, 0, 11, 0 };
-  const int32_t bw[4] = { 10, 16, 10, 16 };
-  const int32_t bh[4] = { 16, 10, 16, 10 };
+  // Subtle circular shroud ring
+  lv_obj_t *shroud = lv_obj_create(holder);
+  lv_obj_remove_style_all(shroud);
+  lv_obj_set_size(shroud, 42, 42);
+  lv_obj_center(shroud);
+  lv_obj_set_style_radius(shroud, LV_RADIUS_CIRCLE, 0);
+  lv_obj_set_style_border_color(shroud, lv_color_hex(0x334155), 0);
+  lv_obj_set_style_border_width(shroud, 2, 0);
+
+  // 4 symmetrical blades arranged at 0°, 90°, 180°, 270°
+  const int32_t bx[] = { 0, 10, 0, -10 };
+  const int32_t by[] = { -10, 0, 10, 0 };
+  const int32_t bw[] = { 9, 15, 9, 15 };
+  const int32_t bh[] = { 15, 9, 15, 9 };
 
   for (int i = 0; i < 4; i++) {
     lv_obj_t *blade = lv_obj_create(holder);
+    lv_obj_remove_style_all(blade);
     lv_obj_set_size(blade, bw[i], bh[i]);
     lv_obj_align(blade, LV_ALIGN_CENTER, bx[i], by[i]);
-    lv_obj_set_style_radius(blade, 5, 0);
+    lv_obj_set_style_radius(blade, 4, 0);
     lv_obj_set_style_bg_color(blade, lv_color_hex(0x38BDF8), 0);
-    lv_obj_set_style_border_width(blade, 0, 0);
+    lv_obj_set_style_bg_opa(blade, LV_OPA_COVER, 0);
   }
 
   // Center motor hub
   lv_obj_t *hub = lv_obj_create(holder);
+  lv_obj_remove_style_all(hub);
   lv_obj_set_size(hub, 14, 14);
   lv_obj_center(hub);
   lv_obj_set_style_radius(hub, LV_RADIUS_CIRCLE, 0);
   lv_obj_set_style_bg_color(hub, lv_color_hex(0xE2E8F0), 0);
+  lv_obj_set_style_bg_opa(hub, LV_OPA_COVER, 0);
   lv_obj_set_style_border_color(hub, lv_color_hex(0x0F172A), 0);
   lv_obj_set_style_border_width(hub, 2, 0);
 
   lv_obj_update_layout(holder);
-  lv_draw_buf_t *snap = lv_snapshot_take(holder, LV_COLOR_FORMAT_RGB565);
+  lv_draw_buf_t *snap = lv_snapshot_take(holder, LV_COLOR_FORMAT_ARGB8888);
   lv_obj_delete(holder);
   return snap;
 }
+
 
 // -------------------------------------------------------------------------
 // Fan Spin Animation & Switch Event Handlers
@@ -125,15 +135,19 @@ void ui_gauges_set_fan_state(uint8_t idx, bool on) {
   if (!fan_img[idx]) return;
 
   if (on) {
+    // Full brightness when running
+    lv_obj_set_style_opa(fan_img[idx], LV_OPA_COVER, 0);
+
     if (!fan_spin_timer) {
       fan_spin_timer = lv_timer_create(fan_spin_timer_cb, 30, nullptr);
     } else {
       lv_timer_resume(fan_spin_timer);
     }
   } else {
-    // Simply stop incrementing angle and snap cleanly back to 0°
+    // Snap cleanly back to 0° and dim to 40% opacity when stopped
     fan_angle[idx] = 0;
     lv_image_set_rotation(fan_img[idx], 0);
+    lv_obj_set_style_opa(fan_img[idx], LV_OPA_40, 0);
   }
 }
 
@@ -198,7 +212,7 @@ static void build_fans_tile(lv_obj_t *parent) {
     fan_img[i] = lv_image_create(card);
     if (fan_icon_snap) {
       lv_image_set_src(fan_img[i], fan_icon_snap);
-      lv_image_set_pivot(fan_img[i], 22, 22);  // Center of 44x44 bitmap
+      lv_image_set_pivot(fan_img[i], fan_icon_snap->header.w / 2, fan_icon_snap->header.h / 2);
     }
     lv_obj_align(fan_img[i], LV_ALIGN_LEFT_MID, 0, 0);
 
