@@ -1,9 +1,44 @@
 #include <Arduino.h>
+#include <atomic>
 #include <lvgl.h>
 #include <ST77916_QSPI.h>
 #include <CST816S.h>
 
 SET_LOOP_TASK_STACK_SIZE(32 * 1024);
+
+// Thread-safe bridge between Core 0 (CAN/sensors) and Core 1 (LVGL UI)
+static std::atomic<int32_t> g_boost_psi_tenths{ 0 };
+static std::atomic<bool> g_demo_mode{ true };  // If no can-bus demo
+
+// -------------------------------------------------------------------------
+// Core 0 Task: High-Speed Sensor / CAN Bus Sampling
+// -------------------------------------------------------------------------
+void data_sampling_task(void *pvParameters) {
+  // Initialize TWAI (CAN bus) or ADC peripherals here on Core 0
+  TickType_t last_wake = xTaskGetTickCount();
+  const TickType_t period = pdMS_TO_TICKS(5);  // 200 Hz sampling rate
+
+  float phase = 0.0f;
+
+  for (;;) {
+    if (g_demo_mode.load(std::memory_order_relaxed)) {
+      // Simulated sweep (-8.5 to +18.5 PSI) until real CAN/sensor is wired
+      phase += 0.015f;
+      int32_t sim_psi = static_cast<int32_t>(50.0f + 135.0f * sinf(phase));
+      g_boost_psi_tenths.store(sim_psi, std::memory_order_relaxed);
+    } else {
+      // Example placeholder for TWAI / CAN frame read:
+      // twai_message_t msg;
+      // if (twai_receive(&msg, 0) == ESP_OK && msg.identifier == 0x123) {
+      //     int32_t psi_tenths = parse_boost_from_can(msg.data);
+      //     g_boost_psi_tenths.store(psi_tenths, std::memory_order_relaxed);
+      // }
+    }
+
+    // Exact 5 ms periodic sleep—never starves Core 0 system watchdog
+    vTaskDelayUntil(&last_wake, period);
+  }
+}
 
 // Display QSPI pins
 #define TFT_SCLK 42
@@ -109,24 +144,6 @@ void set_boost_tenths(int32_t psi_tenths) {
   }
 }
 
-static void boost_anim_cb(void *var, int32_t v) {
-  set_boost_tenths(v);
-}
-
-void start_boost_demo_animation() {
-  lv_anim_t a;
-  lv_anim_init(&a);
-  lv_anim_set_var(&a, boost_scale);
-  lv_anim_set_exec_cb(&a, boost_anim_cb);
-  lv_anim_set_values(&a, -85, 185);
-  lv_anim_set_duration(&a, 2200);
-  lv_anim_set_playback_duration(&a, 2600);
-  lv_anim_set_playback_delay(&a, 300);
-  lv_anim_set_repeat_delay(&a, 400);
-  lv_anim_set_repeat_count(&a, LV_ANIM_REPEAT_INFINITE);
-  lv_anim_set_path_cb(&a, lv_anim_path_ease_in_out);
-  lv_anim_start(&a);
-}
 
 // -------------------------------------------------------------------------
 // Bottom Pill Fade-In / Auto-Hide Logic
@@ -434,7 +451,6 @@ void build_ui() {
   lv_slider_set_value(slider, 80, LV_ANIM_OFF);
   lv_obj_add_event_cb(slider, brightness_slider_cb, LV_EVENT_VALUE_CHANGED, nullptr);
   set_boost_tenths(0);
-  start_boost_demo_animation();
 }
 void setup() {
   Wire.begin(TP_SDA, TP_SCL);
@@ -457,8 +473,22 @@ void setup() {
   lv_indev_set_read_cb(indev, my_touchpad_read);
   build_ui();
   lv_refr_now(disp);
+
+  // Pin data/CAN sampling task strictly to Core 0
+  xTaskCreatePinnedToCore(
+    data_sampling_task,  // Task function
+    "DataSampler",       // Name
+    4096,                // 4 KB stack (plenty for CAN/ADC math)
+    nullptr,             // Parameters
+    2,                   // Priority (above idle, safe for Core 0)
+    nullptr,             // Task handle
+    0                    // Core 0 (PRO_CPU)
+  );
 }
 void loop() {
+// Core 1 safely reads latest atomic telemetry and updates LVGL widgets
+  int32_t latest_psi = g_boost_psi_tenths.load(std::memory_order_relaxed);
+  set_boost_tenths(latest_psi);
   lv_timer_handler();
   delay(1);
 }
