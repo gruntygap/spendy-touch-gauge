@@ -27,12 +27,19 @@ static constexpr int32_t SCREEN_HEIGHT = 360;
 ST77916_QSPI_GFX tft(TFT_SCLK, TFT_IO0, TFT_IO1, TFT_IO2, TFT_IO3, TFT_RST, TFT_CS, TFT_BL);
 CST816S touch(TP_SDA, TP_SCL, TP_RST, TP_IRQ);
 
-// static constexpr uint32_t DRAW_BUF_SIZE = SCREEN_WIDTH * SCREEN_HEIGHT * sizeof(lv_color16_t);
-
-// make drawbuf 1/8 the size
-static constexpr uint32_t DRAW_BUF_SIZE = SCREEN_WIDTH * (SCREEN_HEIGHT / 8) * sizeof(lv_color16_t);
+// 1/6 screen scratchpad in fast internal DMA SRAM (360 * 60 * 2 = 43.2 KB)
+static constexpr uint32_t DRAW_BUF_SIZE = SCREEN_WIDTH * (SCREEN_HEIGHT / 6) * sizeof(lv_color16_t);
 static uint8_t *draw_buf = nullptr;
 
+// Gauge UI elements
+static lv_obj_t *dial_canvas = nullptr;
+static uint8_t *canvas_buf = nullptr;
+static lv_obj_t *boost_scale = nullptr;
+static lv_obj_t *needle_line = nullptr;
+static lv_obj_t *psi_val_lbl = nullptr;
+static int32_t last_tenths = -9999;
+
+// Drawer UI elements
 static lv_obj_t *settings_drawer = nullptr;
 static lv_obj_t *brightness_label = nullptr;
 static lv_obj_t *bottom_pill = nullptr;
@@ -53,7 +60,8 @@ void my_disp_flush(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map) {
                 ST77916_PIXELS_NATIVE);
 
   if (lv_display_flush_is_last(disp)) {
-    tft.display();
+    // displayFull() eliminates top-of-screen partial dirty-rect artifacts
+    tft.displayFull();
   }
 
   lv_display_flush_ready(disp);
@@ -70,6 +78,56 @@ void my_touchpad_read(lv_indev_t *indev, lv_indev_data_t *data) {
 }
 
 // -------------------------------------------------------------------------
+// Boost Gauge Value Setter & Demo Sweep Animation (0.1 PSI units)
+// -------------------------------------------------------------------------
+void set_boost_tenths(int32_t psi_tenths) {
+  // Skip redundant redraws when value hasn't changed
+  if (psi_tenths == last_tenths) return;
+  last_tenths = psi_tenths;
+
+  if (boost_scale && needle_line) {
+    lv_scale_set_line_needle_value(boost_scale, needle_line, 116, psi_tenths);
+  }
+
+  if (psi_val_lbl) {
+    int32_t whole = psi_tenths / 10;
+    int32_t frac = abs(psi_tenths % 10);
+    if (psi_tenths < 0 && whole == 0) {
+      lv_label_set_text_fmt(psi_val_lbl, "-0.%ld", frac);
+    } else {
+      lv_label_set_text_fmt(psi_val_lbl, "%ld.%ld", whole, frac);
+    }
+
+    if (psi_tenths >= 140) {
+      lv_obj_set_style_text_color(psi_val_lbl, lv_color_hex(0xFF5A36), 0);
+    } else if (psi_tenths > 0) {
+      lv_obj_set_style_text_color(psi_val_lbl, lv_color_hex(0x38BDF8), 0);
+    } else {
+      lv_obj_set_style_text_color(psi_val_lbl, lv_color_hex(0xF1F5F9), 0);
+    }
+  }
+}
+
+static void boost_anim_cb(void *var, int32_t v) {
+  set_boost_tenths(v);
+}
+
+void start_boost_demo_animation() {
+  lv_anim_t a;
+  lv_anim_init(&a);
+  lv_anim_set_var(&a, boost_scale);
+  lv_anim_set_exec_cb(&a, boost_anim_cb);
+  lv_anim_set_values(&a, -85, 185);
+  lv_anim_set_duration(&a, 2200);
+  lv_anim_set_playback_duration(&a, 2600);
+  lv_anim_set_playback_delay(&a, 300);
+  lv_anim_set_repeat_delay(&a, 400);
+  lv_anim_set_repeat_count(&a, LV_ANIM_REPEAT_INFINITE);
+  lv_anim_set_path_cb(&a, lv_anim_path_ease_in_out);
+  lv_anim_start(&a);
+}
+
+// -------------------------------------------------------------------------
 // Bottom Pill Fade-In / Auto-Hide Logic
 // -------------------------------------------------------------------------
 static void anim_opa_cb(void *var, int32_t v) {
@@ -77,27 +135,25 @@ static void anim_opa_cb(void *var, int32_t v) {
 }
 
 static void fade_bottom_pill(bool show) {
-    if (!bottom_pill) return;
+  if (!bottom_pill) return;
 
-    lv_opa_t target_opa  = show ? LV_OPA_COVER : LV_OPA_TRANSP;
-    lv_opa_t current_opa = lv_obj_get_style_bg_opa(bottom_pill, LV_PART_MAIN);
-    if (current_opa == target_opa) return;
+  lv_opa_t target_opa = show ? LV_OPA_COVER : LV_OPA_TRANSP;
+  lv_opa_t current_opa = lv_obj_get_style_bg_opa(bottom_pill, LV_PART_MAIN);
+  if (current_opa == target_opa) return;
 
-    lv_anim_delete(bottom_pill, anim_opa_cb);
+  lv_anim_delete(bottom_pill, anim_opa_cb);
 
-    lv_anim_t a;
-    lv_anim_init(&a);
-    lv_anim_set_var(&a, bottom_pill);
-    lv_anim_set_exec_cb(&a, anim_opa_cb);
-    lv_anim_set_values(&a, current_opa, target_opa);
-    lv_anim_set_duration(&a, show ? 150 : 300);
-    lv_anim_set_path_cb(&a, lv_anim_path_ease_out);
-    lv_anim_start(&a);
+  lv_anim_t a;
+  lv_anim_init(&a);
+  lv_anim_set_var(&a, bottom_pill);
+  lv_anim_set_exec_cb(&a, anim_opa_cb);
+  lv_anim_set_values(&a, current_opa, target_opa);
+  lv_anim_set_duration(&a, show ? 150 : 300);
+  lv_anim_set_path_cb(&a, lv_anim_path_ease_out);
+  lv_anim_start(&a);
 }
 
-
 static void pill_hide_timer_cb(lv_timer_t *timer) {
-  // Keep hidden if drawer is open or actively being dragged
   if (!drawer_open && !is_dragging_drawer) {
     fade_bottom_pill(false);
   }
@@ -122,7 +178,7 @@ static void screen_touch_wake_cb(lv_event_t *e) {
 }
 
 // -------------------------------------------------------------------------
-// Smooth Snap Animation for Settings Drawer
+// Smooth Snap Animation & Drag Tracking for Settings Drawer
 // -------------------------------------------------------------------------
 static void anim_y_cb(void *var, int32_t v) {
   lv_obj_set_y(static_cast<lv_obj_t *>(var), v);
@@ -154,9 +210,6 @@ void animate_drawer_to(bool open) {
   lv_anim_start(&a);
 }
 
-// -------------------------------------------------------------------------
-// Interactive Finger-Tracking Drag Handler
-// -------------------------------------------------------------------------
 static void drawer_drag_event_cb(lv_event_t *e) {
   lv_event_code_t code = lv_event_get_code(e);
   lv_indev_t *indev = lv_indev_active();
@@ -190,17 +243,6 @@ static void drawer_drag_event_cb(lv_event_t *e) {
   }
 }
 
-// -------------------------------------------------------------------------
-// Main Screen & Settings Controls Callbacks
-// -------------------------------------------------------------------------
-static void btn_event_cb(lv_event_t *e) {
-  static uint32_t count = 0;
-  count++;
-  lv_obj_t *btn = lv_event_get_target_obj(e);
-  lv_obj_t *label = lv_obj_get_child(btn, 0);
-  lv_label_set_text_fmt(label, "Clicks: %lu", count);
-}
-
 static void brightness_slider_cb(lv_event_t *e) {
   lv_obj_t *slider = lv_event_get_target_obj(e);
   int32_t pct = lv_slider_get_value(slider);
@@ -214,29 +256,121 @@ static void brightness_slider_cb(lv_event_t *e) {
 }
 
 // -------------------------------------------------------------------------
-// Build Main Screen + Finger-Tracked Settings Drawer
+// Pre-Bake Static Dial Face Into a PSRAM Snapshot Image for 60 FPS Needle
 // -------------------------------------------------------------------------
 void build_ui() {
   lv_obj_t *scr = lv_screen_active();
-  lv_obj_set_style_bg_color(scr, lv_color_hex(0x101820), 0);
+  lv_obj_set_style_bg_color(scr, lv_color_hex(0x0B1017), 0);
   lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
   lv_obj_remove_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
-
-  // Reveal the bottom pill whenever any child or background on the screen is touched
   lv_obj_add_event_cb(scr, screen_touch_wake_cb, LV_EVENT_PRESSED, nullptr);
 
-  // Main screen center button (enable event bubbling so pressing it also reveals the pill)
-  lv_obj_t *btn = lv_button_create(scr);
-  lv_obj_set_size(btn, 180, 60);
-  lv_obj_center(btn);
-  lv_obj_add_flag(btn, LV_OBJ_FLAG_EVENT_BUBBLE);
-  lv_obj_add_event_cb(btn, btn_event_cb, LV_EVENT_CLICKED, nullptr);
+  // 1. Temporary container for static bezel + scale ticks + labels
+  lv_obj_t *static_dial = lv_obj_create(scr);
+  lv_obj_set_size(static_dial, 352, 352);
+  lv_obj_center(static_dial);
+  lv_obj_set_style_radius(static_dial, LV_RADIUS_CIRCLE, 0);
+  lv_obj_set_style_bg_color(static_dial, lv_color_hex(0x111822), 0);
+  lv_obj_set_style_border_color(static_dial, lv_color_hex(0x263547), 0);
+  lv_obj_set_style_border_width(static_dial, 3, 0);
+  lv_obj_set_style_pad_all(static_dial, 0, 0);
+  lv_obj_remove_flag(static_dial, LV_OBJ_FLAG_SCROLLABLE);
 
-  lv_obj_t *btn_label = lv_label_create(btn);
-  lv_label_set_text(btn_label, "Tap Me");
-  lv_obj_center(btn_label);
-
-  // Large invisible bottom-edge touch grab zone to pull the drawer up
+  lv_obj_t *temp_scale = lv_scale_create(static_dial);
+  lv_obj_set_size(temp_scale, 326, 326);
+  lv_obj_center(temp_scale);
+  lv_scale_set_mode(temp_scale, LV_SCALE_MODE_ROUND_INNER);
+  lv_scale_set_range(temp_scale, -100, 200);
+  lv_scale_set_total_tick_count(temp_scale, 31);
+  lv_scale_set_major_tick_every(temp_scale, 5);
+  lv_scale_set_angle_range(temp_scale, 270);
+  lv_scale_set_rotation(temp_scale, 135);
+  lv_scale_set_label_show(temp_scale, true);
+  static const char *custom_labels[] = { "-10", "-5", "0", "5", "10", "15", "20", nullptr };
+  lv_scale_set_text_src(temp_scale, custom_labels);
+  lv_obj_set_style_arc_width(temp_scale, 4, LV_PART_MAIN);
+  lv_obj_set_style_arc_color(temp_scale, lv_color_hex(0x334155), LV_PART_MAIN);
+  lv_obj_set_style_line_width(temp_scale, 3, LV_PART_INDICATOR);
+  lv_obj_set_style_length(temp_scale, 16, LV_PART_INDICATOR);
+  lv_obj_set_style_line_color(temp_scale, lv_color_hex(0x94A3B8), LV_PART_INDICATOR);
+  lv_obj_set_style_text_color(temp_scale, lv_color_hex(0xCBD5E1), LV_PART_INDICATOR);
+  lv_obj_set_style_line_width(temp_scale, 2, LV_PART_ITEMS);
+  lv_obj_set_style_length(temp_scale, 8, LV_PART_ITEMS);
+  lv_obj_set_style_line_color(temp_scale, lv_color_hex(0x475569), LV_PART_ITEMS);
+  static lv_style_t boost_arc_style, boost_major_style, boost_minor_style;
+  lv_style_init(&boost_arc_style);
+  lv_style_set_arc_color(&boost_arc_style, lv_color_hex(0x0EA5E9));
+  lv_style_set_arc_width(&boost_arc_style, 5);
+  lv_style_init(&boost_major_style);
+  lv_style_set_line_color(&boost_major_style, lv_color_hex(0x38BDF8));
+  lv_style_set_text_color(&boost_major_style, lv_color_hex(0x38BDF8));
+  lv_style_init(&boost_minor_style);
+  lv_style_set_line_color(&boost_minor_style, lv_color_hex(0x0284C7));
+  lv_scale_section_t *boost_sec = lv_scale_add_section(temp_scale);
+  lv_scale_section_set_range(boost_sec, 0, 140);
+  lv_scale_section_set_style(boost_sec, LV_PART_MAIN, &boost_arc_style);
+  lv_scale_section_set_style(boost_sec, LV_PART_INDICATOR, &boost_major_style);
+  lv_scale_section_set_style(boost_sec, LV_PART_ITEMS, &boost_minor_style);
+  static lv_style_t warn_arc_style, warn_major_style, warn_minor_style;
+  lv_style_init(&warn_arc_style);
+  lv_style_set_arc_color(&warn_arc_style, lv_color_hex(0xEF4444));
+  lv_style_set_arc_width(&warn_arc_style, 6);
+  lv_style_init(&warn_major_style);
+  lv_style_set_line_color(&warn_major_style, lv_color_hex(0xF87171));
+  lv_style_set_text_color(&warn_major_style, lv_color_hex(0xF87171));
+  lv_style_init(&warn_minor_style);
+  lv_style_set_line_color(&warn_minor_style, lv_color_hex(0xDC2626));
+  lv_scale_section_t *warn_sec = lv_scale_add_section(temp_scale);
+  lv_scale_section_set_range(warn_sec, 140, 200);
+  lv_scale_section_set_style(warn_sec, LV_PART_MAIN, &warn_arc_style);
+  lv_scale_section_set_style(warn_sec, LV_PART_INDICATOR, &warn_major_style);
+  lv_scale_section_set_style(warn_sec, LV_PART_ITEMS, &warn_minor_style);
+  lv_obj_t *unit_lbl = lv_label_create(static_dial);
+  lv_label_set_text(unit_lbl, "BOOST PSI");
+  lv_obj_set_style_text_color(unit_lbl, lv_color_hex(0x64748B), 0);
+  lv_obj_align(unit_lbl, LV_ALIGN_BOTTOM_MID, 0, -46);
+  // 2. Snapshot static_dial once into PSRAM (352x352 RGB565 = 247 KB)
+  lv_obj_update_layout(static_dial);
+  lv_draw_buf_t *snap = lv_snapshot_take(static_dial, LV_COLOR_FORMAT_RGB565);
+  lv_obj_delete(static_dial);  // Free all 31 tick/label objects!
+  // Display the pre-baked snapshot as a fast zero-overhead bitmap
+  lv_obj_t *dial_img = lv_image_create(scr);
+  lv_image_set_src(dial_img, snap);
+  lv_obj_center(dial_img);
+  lv_obj_add_flag(dial_img, LV_OBJ_FLAG_EVENT_BUBBLE);
+  // 3. Invisible lightweight scale solely to compute needle coordinates
+  boost_scale = lv_scale_create(dial_img);
+  lv_obj_set_size(boost_scale, 326, 326);
+  lv_obj_center(boost_scale);
+  lv_scale_set_mode(boost_scale, LV_SCALE_MODE_ROUND_INNER);
+  lv_scale_set_range(boost_scale, -100, 200);
+  lv_scale_set_total_tick_count(boost_scale, 0);  // 0 ticks drawn = instant!
+  lv_scale_set_angle_range(boost_scale, 270);
+  lv_scale_set_rotation(boost_scale, 135);
+  lv_scale_set_label_show(boost_scale, false);
+  lv_obj_set_style_arc_opa(boost_scale, LV_OPA_TRANSP, LV_PART_MAIN);
+  lv_obj_add_flag(boost_scale, LV_OBJ_FLAG_EVENT_BUBBLE);
+  // Needle Line (4px crisp line—no rounded endcaps cuts AA overhead in half)
+  needle_line = lv_line_create(boost_scale);
+  lv_obj_set_style_line_width(needle_line, 4, 0);
+  lv_obj_set_style_line_color(needle_line, lv_color_hex(0xFF5A36), 0);
+  // Center hub cap
+  lv_obj_t *hub = lv_obj_create(boost_scale);
+  lv_obj_set_size(hub, 30, 30);
+  lv_obj_center(hub);
+  lv_obj_set_style_radius(hub, LV_RADIUS_CIRCLE, 0);
+  lv_obj_set_style_bg_color(hub, lv_color_hex(0x1E293B), 0);
+  lv_obj_set_style_border_color(hub, lv_color_hex(0x64748B), 0);
+  lv_obj_set_style_border_width(hub, 2, 0);
+  lv_obj_remove_flag(hub, LV_OBJ_FLAG_CLICKABLE);
+  // Digital readout
+  psi_val_lbl = lv_label_create(dial_img);
+  lv_label_set_text(psi_val_lbl, "0.0");
+  lv_obj_set_style_text_color(psi_val_lbl, lv_color_hex(0xF1F5F9), 0);
+  lv_obj_align(psi_val_lbl, LV_ALIGN_BOTTOM_MID, 0, -68);
+  // ---------------------------------------------------------------------
+  // Bottom Touch-Wake Grab Zone & Auto-Hiding Pill
+  // ---------------------------------------------------------------------
   lv_obj_t *bottom_grab_zone = lv_obj_create(scr);
   lv_obj_set_size(bottom_grab_zone, SCREEN_WIDTH, 75);
   lv_obj_align(bottom_grab_zone, LV_ALIGN_BOTTOM_MID, 0, 0);
@@ -244,8 +378,6 @@ void build_ui() {
   lv_obj_set_style_border_width(bottom_grab_zone, 0, 0);
   lv_obj_remove_flag(bottom_grab_zone, LV_OBJ_FLAG_SCROLLABLE);
   lv_obj_add_event_cb(bottom_grab_zone, drawer_drag_event_cb, LV_EVENT_ALL, nullptr);
-
-  // Visible bottom handle pill (starts completely hidden until screen is touched)
   bottom_pill = lv_obj_create(bottom_grab_zone);
   lv_obj_set_size(bottom_pill, 56, 7);
   lv_obj_align(bottom_pill, LV_ALIGN_BOTTOM_MID, 0, -14);
@@ -254,9 +386,8 @@ void build_ui() {
   lv_obj_set_style_bg_opa(bottom_pill, LV_OPA_TRANSP, 0);
   lv_obj_set_style_border_width(bottom_pill, 0, 0);
   lv_obj_remove_flag(bottom_pill, LV_OBJ_FLAG_CLICKABLE);
-
   // ---------------------------------------------------------------------
-  // Settings Drawer (starts hidden off-screen at y = SCREEN_HEIGHT)
+  // Finger-Tracked Settings Drawer
   // ---------------------------------------------------------------------
   settings_drawer = lv_obj_create(scr);
   lv_obj_set_size(settings_drawer, SCREEN_WIDTH, SCREEN_HEIGHT);
@@ -268,8 +399,6 @@ void build_ui() {
   lv_obj_set_style_border_width(settings_drawer, 2, 0);
   lv_obj_set_style_pad_all(settings_drawer, 0, 0);
   lv_obj_remove_flag(settings_drawer, LV_OBJ_FLAG_SCROLLABLE);
-
-  // Generous top tab/handle grab zone (360 x 85 px) for easy finger grab to close
   lv_obj_t *top_grab_zone = lv_obj_create(settings_drawer);
   lv_obj_set_size(top_grab_zone, SCREEN_WIDTH, 85);
   lv_obj_align(top_grab_zone, LV_ALIGN_TOP_MID, 0, 0);
@@ -277,7 +406,6 @@ void build_ui() {
   lv_obj_set_style_border_width(top_grab_zone, 0, 0);
   lv_obj_remove_flag(top_grab_zone, LV_OBJ_FLAG_SCROLLABLE);
   lv_obj_add_event_cb(top_grab_zone, drawer_drag_event_cb, LV_EVENT_ALL, nullptr);
-  // Visible top handle pill inside the top grab zone
   lv_obj_t *top_pill = lv_obj_create(top_grab_zone);
   lv_obj_set_size(top_pill, 60, 8);
   lv_obj_align(top_pill, LV_ALIGN_TOP_MID, 0, 16);
@@ -285,13 +413,11 @@ void build_ui() {
   lv_obj_set_style_bg_color(top_pill, lv_color_hex(0x8FA5BD), 0);
   lv_obj_set_style_border_width(top_pill, 0, 0);
   lv_obj_remove_flag(top_pill, LV_OBJ_FLAG_CLICKABLE);
-  // Drawer Title inside the top grab area
   lv_obj_t *title = lv_label_create(top_grab_zone);
   lv_label_set_text(title, "Settings");
   lv_obj_set_style_text_color(title, lv_color_hex(0xFFFFFF), 0);
   lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 36);
   lv_obj_remove_flag(title, LV_OBJ_FLAG_CLICKABLE);
-  // Brightness label + slider
   brightness_label = lv_label_create(settings_drawer);
   lv_label_set_text(brightness_label, "Brightness: 80%");
   lv_obj_set_style_text_color(brightness_label, lv_color_hex(0xD0DCE8), 0);
@@ -302,6 +428,8 @@ void build_ui() {
   lv_slider_set_range(slider, 5, 100);
   lv_slider_set_value(slider, 80, LV_ANIM_OFF);
   lv_obj_add_event_cb(slider, brightness_slider_cb, LV_EVENT_VALUE_CHANGED, nullptr);
+  set_boost_tenths(0);
+  start_boost_demo_animation();
 }
 void setup() {
   Wire.begin(TP_SDA, TP_SCL);
@@ -314,7 +442,6 @@ void setup() {
   lv_init();
   lv_tick_set_cb(millis);
   draw_buf = static_cast<uint8_t *>(
-    // heap_caps_aligned_alloc(64, DRAW_BUF_SIZE, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
     heap_caps_aligned_alloc(64, DRAW_BUF_SIZE, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL));
   lv_display_t *disp = lv_display_create(SCREEN_WIDTH, SCREEN_HEIGHT);
   lv_display_set_color_format(disp, LV_COLOR_FORMAT_RGB565);
