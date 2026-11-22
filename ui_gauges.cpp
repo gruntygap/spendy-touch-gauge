@@ -83,10 +83,6 @@ static lv_draw_buf_t *create_fan_bitmap(lv_obj_t *temp_parent) {
 
   lv_obj_update_layout(holder);
   lv_draw_buf_t *snap = lv_snapshot_take(holder, LV_COLOR_FORMAT_RGB565);
-  if (snap) {
-    lv_draw_sw_rgb565_swap(snap->data, (snap->header.stride / 2) * snap->header.h);
-    snap->header.cf = LV_COLOR_FORMAT_RGB565_SWAPPED;
-  }
   lv_obj_delete(holder);
   return snap;
 }
@@ -96,61 +92,61 @@ static lv_draw_buf_t *create_fan_bitmap(lv_obj_t *temp_parent) {
 // -------------------------------------------------------------------------
 
 static lv_timer_t *fan_spin_timer = nullptr;
-static int32_t     fan_angle[2]   = {0, 0};
+static int32_t fan_angle[2] = { 0, 0 };
 
 // Single lightweight timer rotates whichever fan(s) are currently ON
 static void fan_spin_timer_cb(lv_timer_t *timer) {
-    bool any_running = false;
-    for (uint8_t i = 0; i < 2; i++) {
-        if (fan_running[i] && fan_img[i]) {
-            any_running = true;
-            fan_angle[i] = (fan_angle[i] + 180) % 3600; // +18° per 30ms (~100 RPM)
-            lv_image_set_rotation(fan_img[i], fan_angle[i]);
-        }
+  bool any_running = false;
+  for (uint8_t i = 0; i < 2; i++) {
+    if (fan_running[i] && fan_img[i]) {
+      any_running = true;
+      fan_angle[i] = (fan_angle[i] + 180) % 3600;  // +18° per 30ms (~100 RPM)
+      lv_image_set_rotation(fan_img[i], fan_angle[i]);
     }
-    if (!any_running && fan_spin_timer) {
-        lv_timer_pause(fan_spin_timer);
-    }
+  }
+  if (!any_running && fan_spin_timer) {
+    lv_timer_pause(fan_spin_timer);
+  }
 }
 
 void ui_gauges_set_fan_state(uint8_t idx, bool on) {
-    if (idx > 1) return;
-    fan_running[idx] = on;
+  if (idx > 1) return;
+  fan_running[idx] = on;
 
-    if (fan_sw[idx]) {
-        bool currently_checked = lv_obj_has_state(fan_sw[idx], LV_STATE_CHECKED);
-        if (on && !currently_checked) {
-            lv_obj_add_state(fan_sw[idx], LV_STATE_CHECKED);
-        } else if (!on && currently_checked) {
-            lv_obj_remove_state(fan_sw[idx], LV_STATE_CHECKED);
-        }
+  if (fan_sw[idx]) {
+    bool currently_checked = lv_obj_has_state(fan_sw[idx], LV_STATE_CHECKED);
+    if (on && !currently_checked) {
+      lv_obj_add_state(fan_sw[idx], LV_STATE_CHECKED);
+    } else if (!on && currently_checked) {
+      lv_obj_remove_state(fan_sw[idx], LV_STATE_CHECKED);
     }
+  }
 
-    if (!fan_img[idx]) return;
+  if (!fan_img[idx]) return;
 
-    if (on) {
-        if (!fan_spin_timer) {
-            fan_spin_timer = lv_timer_create(fan_spin_timer_cb, 30, nullptr);
-        } else {
-            lv_timer_resume(fan_spin_timer);
-        }
+  if (on) {
+    if (!fan_spin_timer) {
+      fan_spin_timer = lv_timer_create(fan_spin_timer_cb, 30, nullptr);
     } else {
-        // Simply stop incrementing angle and snap cleanly back to 0°
-        fan_angle[idx] = 0;
-        lv_image_set_rotation(fan_img[idx], 0);
+      lv_timer_resume(fan_spin_timer);
     }
+  } else {
+    // Simply stop incrementing angle and snap cleanly back to 0°
+    fan_angle[idx] = 0;
+    lv_image_set_rotation(fan_img[idx], 0);
+  }
 }
 
 static void fan_switch_event_cb(lv_event_t *e) {
-    lv_obj_t *sw = lv_event_get_target_obj(e);
-    uint8_t idx = static_cast<uint8_t>(reinterpret_cast<uintptr_t>(lv_event_get_user_data(e)));
-    bool is_on = lv_obj_has_state(sw, LV_STATE_CHECKED);
+  lv_obj_t *sw = lv_event_get_target_obj(e);
+  uint8_t idx = static_cast<uint8_t>(reinterpret_cast<uintptr_t>(lv_event_get_user_data(e)));
+  bool is_on = lv_obj_has_state(sw, LV_STATE_CHECKED);
 
-    ui_gauges_set_fan_state(idx, is_on);
+  ui_gauges_set_fan_state(idx, is_on);
 
-    if (user_fan_cb) {
-        user_fan_cb(idx, is_on);
-    }
+  if (user_fan_cb) {
+    user_fan_cb(idx, is_on);
+  }
 }
 
 
@@ -218,7 +214,6 @@ static void build_fans_tile(lv_obj_t *parent) {
     lv_obj_align(fan_sw[i], LV_ALIGN_RIGHT_MID, 0, 0);
     lv_obj_set_style_bg_color(fan_sw[i], lv_color_hex(0x334155), LV_PART_MAIN);
     lv_obj_set_style_bg_color(fan_sw[i], lv_color_hex(0x0EA5E9), LV_PART_INDICATOR | LV_STATE_CHECKED);
-    lv_obj_add_flag(fan_sw[i], LV_OBJ_FLAG_EVENT_BUBBLE);
     lv_obj_add_event_cb(fan_sw[i], fan_switch_event_cb, LV_EVENT_VALUE_CHANGED,
                         reinterpret_cast<void *>(static_cast<uintptr_t>(i)));
 
