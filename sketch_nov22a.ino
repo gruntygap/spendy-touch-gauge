@@ -28,7 +28,7 @@ ST77916_QSPI_GFX tft(TFT_SCLK, TFT_IO0, TFT_IO1, TFT_IO2, TFT_IO3, TFT_RST, TFT_
 CST816S touch(TP_SDA, TP_SCL, TP_RST, TP_IRQ);
 
 // 1/6 screen scratchpad in fast internal DMA SRAM (360 * 60 * 2 = 43.2 KB)
-static constexpr uint32_t DRAW_BUF_SIZE = SCREEN_WIDTH * (SCREEN_HEIGHT / 6) * sizeof(lv_color16_t);
+static constexpr uint32_t DRAW_BUF_SIZE = SCREEN_WIDTH * (SCREEN_HEIGHT / 4) * sizeof(lv_color16_t);
 static uint8_t *draw_buf = nullptr;
 
 // Gauge UI elements
@@ -55,13 +55,14 @@ void my_disp_flush(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map) {
   uint32_t w = lv_area_get_width(area);
   uint32_t h = lv_area_get_height(area);
 
+  // Zero-copy memcpy into ST77916_QSPI's big-endian framebuffer
   tft.pushImage(area->x1, area->y1, w, h,
                 reinterpret_cast<const uint16_t *>(px_map),
-                ST77916_PIXELS_NATIVE);
+                ST77916_PIXELS_BE);
 
   if (lv_display_flush_is_last(disp)) {
-    // displayFull() eliminates top-of-screen partial dirty-rect artifacts
-    tft.displayFull();
+    // Push ONLY the changed dirty box instead of the whole 360x360 screen
+    tft.display();
   }
 
   lv_display_flush_ready(disp);
@@ -332,6 +333,10 @@ void build_ui() {
   // 2. Snapshot static_dial once into PSRAM (352x352 RGB565 = 247 KB)
   lv_obj_update_layout(static_dial);
   lv_draw_buf_t *snap = lv_snapshot_take(static_dial, LV_COLOR_FORMAT_RGB565);
+  if (snap) {
+    lv_draw_sw_rgb565_swap(snap->data, (snap->header.stride / 2) * snap->header.h);
+    snap->header.cf = LV_COLOR_FORMAT_RGB565_SWAPPED;
+  }
   lv_obj_delete(static_dial);  // Free all 31 tick/label objects!
   // Display the pre-baked snapshot as a fast zero-overhead bitmap
   lv_obj_t *dial_img = lv_image_create(scr);
@@ -444,7 +449,7 @@ void setup() {
   draw_buf = static_cast<uint8_t *>(
     heap_caps_aligned_alloc(64, DRAW_BUF_SIZE, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL));
   lv_display_t *disp = lv_display_create(SCREEN_WIDTH, SCREEN_HEIGHT);
-  lv_display_set_color_format(disp, LV_COLOR_FORMAT_RGB565);
+  lv_display_set_color_format(disp, LV_COLOR_FORMAT_RGB565_SWAPPED);
   lv_display_set_flush_cb(disp, my_disp_flush);
   lv_display_set_buffers(disp, draw_buf, nullptr, DRAW_BUF_SIZE, LV_DISPLAY_RENDER_MODE_PARTIAL);
   lv_indev_t *indev = lv_indev_create();
