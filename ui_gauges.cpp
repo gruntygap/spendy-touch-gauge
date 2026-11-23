@@ -2,6 +2,14 @@
 #include "ui_bitmaps.h"
 #include "display_driver.h"
 #include <stdlib.h>
+#include <math.h>
+
+#if LV_FONT_MONTSERRAT_48
+LV_FONT_DECLARE(lv_font_montserrat_48);
+#endif
+#if LV_FONT_MONTSERRAT_18
+LV_FONT_DECLARE(lv_font_montserrat_18);
+#endif
 
 static lv_obj_t *tileview = nullptr;
 static lv_obj_t *dots_container = nullptr;
@@ -12,10 +20,14 @@ static lv_obj_t *dot_4 = nullptr;
 static lv_obj_t *dot_5 = nullptr;
 
 // Tile 0: Boost Gauge (-10.0 to 20.0 PSI)
-static lv_obj_t *boost_scale = nullptr;
-static lv_obj_t *needle_line = nullptr;
+static lv_obj_t *boost_arc = nullptr;
+static lv_obj_t *boost_peak_chip = nullptr;
+static lv_obj_t *boost_title_lbl = nullptr;
 static lv_obj_t *psi_val_lbl = nullptr;
+static lv_obj_t *boost_unit_lbl = nullptr;
 static int32_t last_boost = -9999;
+static int32_t max_recorded_boost = -100;
+static lv_point_precise_t boost_peak_pts[2];
 
 // Tile 1: Coolant Temp Gauge (100 to 260 °F)
 static lv_obj_t *temp_arc = nullptr;
@@ -513,6 +525,43 @@ static void build_fans_tile(lv_obj_t *parent) {
 }
 
 
+static void update_boost_peak_chip(int32_t peak_val) {
+  if (!boost_peak_chip) return;
+  if (peak_val < -100) peak_val = -100;
+  if (peak_val > 200) peak_val = 200;
+
+  float frac = static_cast<float>(peak_val + 100) / 300.0f;
+  float angle_deg = 135.0f + frac * 270.0f;
+  float angle_rad = angle_deg * (3.1415926535f / 180.0f);
+
+  const float cx = 176.0f;
+  const float cy = 176.0f;
+  const float r_in = 113.0f;
+  const float r_out = 127.0f;
+
+  float cos_a = cosf(angle_rad);
+  float sin_a = sinf(angle_rad);
+
+  boost_peak_pts[0].x = static_cast<int32_t>(cx + r_in * cos_a);
+  boost_peak_pts[0].y = static_cast<int32_t>(cy + r_in * sin_a);
+  boost_peak_pts[1].x = static_cast<int32_t>(cx + r_out * cos_a);
+  boost_peak_pts[1].y = static_cast<int32_t>(cy + r_out * sin_a);
+
+  lv_line_set_points(boost_peak_chip, boost_peak_pts, 2);
+}
+
+void ui_gauges_reset_peak_boost() {
+  max_recorded_boost = (last_boost != -9999) ? last_boost : -100;
+  update_boost_peak_chip(max_recorded_boost);
+}
+
+static void boost_readout_click_cb(lv_event_t *e) {
+  LV_UNUSED(e);
+  ui_gauges_reset_peak_boost();
+  extern void ui_drawer_notify_touch();
+  ui_drawer_notify_touch();
+}
+
 static void build_boost_tile(lv_obj_t *parent) {
   lv_obj_add_flag(parent, LV_OBJ_FLAG_EVENT_BUBBLE);
 
@@ -583,10 +632,18 @@ static void build_boost_tile(lv_obj_t *parent) {
   lv_scale_section_set_style(warn_sec, LV_PART_INDICATOR, &warn_major_style);
   lv_scale_section_set_style(warn_sec, LV_PART_ITEMS, &warn_minor_style);
 
-  lv_obj_t *unit_lbl = lv_label_create(static_dial);
-  lv_label_set_text(unit_lbl, "BOOST PSI");
-  lv_obj_set_style_text_color(unit_lbl, lv_color_hex(0x64748B), 0);
-  lv_obj_align(unit_lbl, LV_ALIGN_BOTTOM_MID, 0, -46);
+  // Background track arc inside the scale (baked into static dial snapshot)
+  lv_obj_t *bg_track = lv_arc_create(static_dial);
+  lv_obj_set_size(bg_track, 240, 240);
+  lv_obj_center(bg_track);
+  lv_arc_set_rotation(bg_track, 135);
+  lv_arc_set_bg_angles(bg_track, 0, 270);
+  lv_arc_set_range(bg_track, -100, 200);
+  lv_arc_set_value(bg_track, -100);
+  lv_obj_remove_style(bg_track, nullptr, LV_PART_KNOB);
+  lv_obj_set_style_arc_width(bg_track, 10, LV_PART_MAIN);
+  lv_obj_set_style_arc_color(bg_track, lv_color_hex(0x1E293B), LV_PART_MAIN);
+  lv_obj_set_style_arc_opa(bg_track, LV_OPA_TRANSP, LV_PART_INDICATOR);
 
   lv_obj_update_layout(static_dial);
   lv_draw_buf_t *snap = lv_snapshot_take(static_dial, LV_COLOR_FORMAT_RGB565);
@@ -604,35 +661,54 @@ static void build_boost_tile(lv_obj_t *parent) {
     dial_parent = dial_img;
   }
 
-  boost_scale = lv_scale_create(dial_parent);
-  lv_obj_set_size(boost_scale, 326, 326);
-  lv_obj_center(boost_scale);
-  lv_scale_set_mode(boost_scale, LV_SCALE_MODE_ROUND_INNER);
-  lv_scale_set_range(boost_scale, -100, 200);
-  lv_scale_set_total_tick_count(boost_scale, 0);
-  lv_scale_set_angle_range(boost_scale, 270);
-  lv_scale_set_rotation(boost_scale, 135);
-  lv_scale_set_label_show(boost_scale, false);
-  lv_obj_set_style_arc_opa(boost_scale, LV_OPA_TRANSP, LV_PART_MAIN);
-  lv_obj_add_flag(boost_scale, LV_OBJ_FLAG_EVENT_BUBBLE);
+  // Dynamic boost value arc inside the scale with #53E2D0 stroke
+  boost_arc = lv_arc_create(dial_parent);
+  lv_obj_set_size(boost_arc, 240, 240);
+  lv_obj_center(boost_arc);
+  lv_arc_set_rotation(boost_arc, 135);
+  lv_arc_set_bg_angles(boost_arc, 0, 270);
+  lv_arc_set_range(boost_arc, -100, 200);
+  lv_arc_set_value(boost_arc, -100);
+  lv_obj_remove_style(boost_arc, nullptr, LV_PART_KNOB);
+  lv_obj_remove_flag(boost_arc, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_add_flag(boost_arc, LV_OBJ_FLAG_EVENT_BUBBLE);
+  lv_obj_set_style_arc_opa(boost_arc, LV_OPA_TRANSP, LV_PART_MAIN);
+  lv_obj_set_style_arc_width(boost_arc, 10, LV_PART_INDICATOR);
+  lv_obj_set_style_arc_color(boost_arc, lv_color_hex(0x53E2D0), LV_PART_INDICATOR);
 
-  needle_line = lv_line_create(boost_scale);
-  lv_obj_set_style_line_width(needle_line, 4, 0);
-  lv_obj_set_style_line_color(needle_line, lv_color_hex(0xFF5A36), 0);
+  // Peak-hold chip line indicating highest recorded value
+  boost_peak_chip = lv_line_create(dial_parent);
+  lv_obj_set_style_line_width(boost_peak_chip, 4, 0);
+  lv_obj_set_style_line_rounded(boost_peak_chip, true, 0);
+  lv_obj_set_style_line_color(boost_peak_chip, lv_color_hex(0x53E2D0), 0);
+  lv_obj_remove_flag(boost_peak_chip, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_add_flag(boost_peak_chip, LV_OBJ_FLAG_EVENT_BUBBLE);
 
-  lv_obj_t *hub = lv_obj_create(boost_scale);
-  lv_obj_set_size(hub, 30, 30);
-  lv_obj_center(hub);
-  lv_obj_set_style_radius(hub, LV_RADIUS_CIRCLE, 0);
-  lv_obj_set_style_bg_color(hub, lv_color_hex(0x1E293B), 0);
-  lv_obj_set_style_border_color(hub, lv_color_hex(0x64748B), 0);
-  lv_obj_set_style_border_width(hub, 2, 0);
-  lv_obj_remove_flag(hub, LV_OBJ_FLAG_CLICKABLE);
+  // Top title: "boost" in 18px font above readout
+  boost_title_lbl = lv_label_create(dial_parent);
+  lv_label_set_text(boost_title_lbl, "boost");
+  lv_obj_set_style_text_color(boost_title_lbl, lv_color_hex(0x94A3B8), 0);
+#if LV_FONT_MONTSERRAT_18
+  lv_obj_set_style_text_font(boost_title_lbl, &lv_font_montserrat_18, 0);
+#endif
+  lv_obj_align(boost_title_lbl, LV_ALIGN_CENTER, 0, -40);
 
+  // Center 48px digital value readout
   psi_val_lbl = lv_label_create(dial_parent);
   lv_label_set_text(psi_val_lbl, "0.0");
   lv_obj_set_style_text_color(psi_val_lbl, lv_color_hex(0xF1F5F9), 0);
-  lv_obj_align(psi_val_lbl, LV_ALIGN_BOTTOM_MID, 0, -68);
+#if LV_FONT_MONTSERRAT_48
+  lv_obj_set_style_text_font(psi_val_lbl, &lv_font_montserrat_48, 0);
+#endif
+  lv_obj_align(psi_val_lbl, LV_ALIGN_CENTER, 0, 2);
+  lv_obj_add_flag(psi_val_lbl, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_add_event_cb(psi_val_lbl, boost_readout_click_cb, LV_EVENT_CLICKED, nullptr);
+
+  // Bottom unit label: "psi" beneath readout
+  boost_unit_lbl = lv_label_create(dial_parent);
+  lv_label_set_text(boost_unit_lbl, "psi");
+  lv_obj_set_style_text_color(boost_unit_lbl, lv_color_hex(0x64748B), 0);
+  lv_obj_align(boost_unit_lbl, LV_ALIGN_CENTER, 0, 38);
 
   ui_gauges_set_boost_tenths(0);
 }
@@ -766,9 +842,16 @@ void ui_gauges_create(lv_obj_t *parent) {
 void ui_gauges_set_boost_tenths(int32_t psi_tenths) {
   if (psi_tenths == last_boost) return;
   last_boost = psi_tenths;
-  if (boost_scale && needle_line) {
-    lv_scale_set_line_needle_value(boost_scale, needle_line, 102, psi_tenths);
+
+  if (boost_arc) {
+    lv_arc_set_value(boost_arc, psi_tenths);
   }
+
+  if (psi_tenths > max_recorded_boost) {
+    max_recorded_boost = psi_tenths;
+    update_boost_peak_chip(max_recorded_boost);
+  }
+
   if (psi_val_lbl) {
     int32_t whole = psi_tenths / 10;
     int32_t frac = abs(psi_tenths % 10);
@@ -779,8 +862,6 @@ void ui_gauges_set_boost_tenths(int32_t psi_tenths) {
     }
     if (psi_tenths >= 140) {
       lv_obj_set_style_text_color(psi_val_lbl, lv_color_hex(0xFF5A36), 0);
-    } else if (psi_tenths > 0) {
-      lv_obj_set_style_text_color(psi_val_lbl, lv_color_hex(0x38BDF8), 0);
     } else {
       lv_obj_set_style_text_color(psi_val_lbl, lv_color_hex(0xF1F5F9), 0);
     }
