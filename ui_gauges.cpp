@@ -8,6 +8,7 @@ static lv_obj_t *dot_1 = nullptr;
 static lv_obj_t *dot_2 = nullptr;
 static lv_obj_t *dot_3 = nullptr;
 static lv_obj_t *dot_4 = nullptr;
+static lv_obj_t *dot_5 = nullptr;
 
 // Tile 0: Boost Gauge (-10.0 to 20.0 PSI)
 static lv_obj_t *boost_scale = nullptr;
@@ -36,20 +37,30 @@ static lv_obj_t *table_badge_1[2] = { nullptr, nullptr };
 static lv_obj_t *table_badge_2[2] = { nullptr, nullptr };
 static table_toggle_cb_t user_table_cb = nullptr;
 
+// -------------------------------------------------------------------------
+// Tile 4 Statics: Voltage (Lightning Bolt) + Ethanol (Corn Cob)
+// -------------------------------------------------------------------------
+static lv_draw_buf_t *volt_icon_snap = nullptr;
+static lv_draw_buf_t *ethanol_icon_snap = nullptr;
+static lv_obj_t *volt_val_lbl = nullptr;
+static lv_obj_t *ethanol_val_lbl = nullptr;
+static int32_t last_volts = -9999;
+static int32_t last_ethanol = -9999;
+
 void ui_gauges_set_table_callback(table_toggle_cb_t cb) {
   user_table_cb = cb;
 }
 
 // -------------------------------------------------------------------------
-// Update tileview_changed_cb for 4 pages
+// Update tileview_changed_cb for 5 pages
 // -------------------------------------------------------------------------
 static void tileview_changed_cb(lv_event_t *e) {
   lv_obj_t *tv = lv_event_get_target_obj(e);
   lv_obj_t *active = lv_tileview_get_tile_active(tv);
   uint32_t idx = lv_obj_get_index(active);
 
-  lv_obj_t *dots[] = { dot_1, dot_2, dot_3, dot_4 };
-  for (uint32_t i = 0; i < 4; i++) {
+  lv_obj_t *dots[] = { dot_1, dot_2, dot_3, dot_4, dot_5 };
+  for (uint32_t i = 0; i < 5; i++) {
     if (dots[i]) {
       lv_obj_set_style_bg_color(dots[i], lv_color_hex(idx == i ? 0x38BDF8 : 0x334155), 0);
     }
@@ -57,6 +68,238 @@ static void tileview_changed_cb(lv_event_t *e) {
 
   extern void ui_drawer_notify_touch();
   ui_drawer_notify_touch();
+}
+
+// -------------------------------------------------------------------------
+// Pre-Bake a 45x45 Yellow Voltage Battery + Lightning Bitmap (ARGB8888)
+// -------------------------------------------------------------------------
+static lv_draw_buf_t *create_lightning_bitmap(lv_obj_t *temp_parent) {
+  constexpr int32_t SIZE = 45;
+
+  lv_obj_t *holder = lv_obj_create(temp_parent);
+  lv_obj_remove_style_all(holder);
+  lv_obj_set_size(holder, SIZE, SIZE);
+  lv_obj_set_style_bg_opa(holder, LV_OPA_TRANSP, 0);
+
+  // Bold zig-zag lightning bolt centered on 45x45
+  static lv_point_precise_t bolt_pts[] = {
+    { 26, 4 },
+    { 12, 23 },
+    { 23, 23 },
+    { 18, 41 },
+    { 33, 21 },
+    { 22, 21 },
+    { 26, 4 }
+  };
+
+  lv_obj_t *bolt = lv_line_create(holder);
+  lv_line_set_points(bolt, bolt_pts, 7);
+  lv_obj_set_style_line_width(bolt, 4, 0);
+  lv_obj_set_style_line_color(bolt, lv_color_hex(0xFACC15), 0);
+  lv_obj_set_style_line_rounded(bolt, true, 0);
+
+  lv_obj_update_layout(holder);
+  lv_draw_buf_t *snap = lv_snapshot_take(holder, LV_COLOR_FORMAT_ARGB8888);
+  lv_obj_delete(holder);
+  return snap;
+}
+
+static lv_draw_buf_t *create_corn_bitmap(lv_obj_t *temp_parent) {
+  constexpr int32_t SIZE = 45;
+
+  lv_obj_t *holder = lv_obj_create(temp_parent);
+  lv_obj_remove_style_all(holder);
+  lv_obj_set_size(holder, SIZE, SIZE);
+  lv_obj_set_style_bg_opa(holder, LV_OPA_TRANSP, 0);
+
+  // Golden corn ear body (oval pill in center)
+  lv_obj_t *cob = lv_obj_create(holder);
+  lv_obj_remove_style_all(cob);
+  lv_obj_set_size(cob, 17, 31);
+  lv_obj_align(cob, LV_ALIGN_TOP_MID, 0, 5);
+  lv_obj_set_style_radius(cob, 9, 0);
+  lv_obj_set_style_bg_color(cob, lv_color_hex(0xFACC15), 0);
+  lv_obj_set_style_bg_opa(cob, LV_OPA_COVER, 0);
+  lv_obj_set_style_border_color(cob, lv_color_hex(0xCA8A04), 0);
+  lv_obj_set_style_border_width(cob, 1, 0);
+
+  // Subtle kernel grid dots across the cob
+  const int32_t kx[] = { -3, 3, -3, 3, -3, 3 };
+  const int32_t ky[] = { -7, -7, -1, -1, 5, 5 };
+  for (int i = 0; i < 6; i++) {
+    lv_obj_t *kernel = lv_obj_create(cob);
+    lv_obj_remove_style_all(kernel);
+    lv_obj_set_size(kernel, 3, 3);
+    lv_obj_align(kernel, LV_ALIGN_CENTER, kx[i], ky[i]);
+    lv_obj_set_style_radius(kernel, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(kernel, lv_color_hex(0xFEF08A), 0);
+    lv_obj_set_style_bg_opa(kernel, LV_OPA_COVER, 0);
+  }
+
+  // Left green husk leaf wrapping the lower cob
+  lv_obj_t *leaf_l = lv_obj_create(holder);
+  lv_obj_remove_style_all(leaf_l);
+  lv_obj_set_size(leaf_l, 12, 20);
+  lv_obj_align(leaf_l, LV_ALIGN_BOTTOM_LEFT, 9, -4);
+  lv_obj_set_style_radius(leaf_l, 6, 0);
+  lv_obj_set_style_bg_color(leaf_l, lv_color_hex(0x22C55E), 0);
+  lv_obj_set_style_bg_opa(leaf_l, LV_OPA_COVER, 0);
+  lv_obj_set_style_transform_rotation(leaf_l, -220, 0);  // -22° tilt
+
+  // Right green husk leaf wrapping the lower cob
+  lv_obj_t *leaf_r = lv_obj_create(holder);
+  lv_obj_remove_style_all(leaf_r);
+  lv_obj_set_size(leaf_r, 12, 20);
+  lv_obj_align(leaf_r, LV_ALIGN_BOTTOM_RIGHT, -9, -4);
+  lv_obj_set_style_radius(leaf_r, 6, 0);
+  lv_obj_set_style_bg_color(leaf_r, lv_color_hex(0x16A34A), 0);
+  lv_obj_set_style_bg_opa(leaf_r, LV_OPA_COVER, 0);
+  lv_obj_set_style_transform_rotation(leaf_r, 220, 0);  // +22° tilt
+
+  lv_obj_update_layout(holder);
+  lv_draw_buf_t *snap = lv_snapshot_take(holder, LV_COLOR_FORMAT_ARGB8888);
+  lv_obj_delete(holder);
+  return snap;
+}
+
+
+// -------------------------------------------------------------------------
+// Build Tile 4: Battery Voltage Display
+// -------------------------------------------------------------------------
+static void build_voltage_tile(lv_obj_t *parent) {
+  lv_obj_add_flag(parent, LV_OBJ_FLAG_EVENT_BUBBLE);
+
+  if (!volt_icon_snap) {
+    volt_icon_snap = create_lightning_bitmap(parent);
+  }
+  if (!ethanol_icon_snap) {
+    ethanol_icon_snap = create_corn_bitmap(parent);
+  }
+
+  // Outer circular bezel matching the rest of the gauges
+  lv_obj_t *bezel = lv_obj_create(parent);
+  lv_obj_set_size(bezel, 352, 352);
+  lv_obj_center(bezel);
+  lv_obj_set_style_radius(bezel, LV_RADIUS_CIRCLE, 0);
+  lv_obj_set_style_bg_color(bezel, lv_color_hex(0x111822), 0);
+  lv_obj_set_style_border_color(bezel, lv_color_hex(0x263547), 0);
+  lv_obj_set_style_border_width(bezel, 3, 0);
+  lv_obj_set_style_pad_all(bezel, 0, 0);
+  lv_obj_remove_flag(bezel, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_add_flag(bezel, LV_OBJ_FLAG_EVENT_BUBBLE);
+
+  // Header label
+  lv_obj_t *header = lv_label_create(bezel);
+  lv_label_set_text(header, "POWER & FUEL");
+  lv_obj_set_style_text_color(header, lv_color_hex(0x64748B), 0);
+  lv_obj_align(header, LV_ALIGN_TOP_MID, 0, 38);
+
+  // ---------------------------------------------------------------------
+  // Top Row Card: Yellow Lightning Bolt + Live Voltage Readout
+  // ---------------------------------------------------------------------
+  lv_obj_t *volt_card = lv_obj_create(bezel);
+  lv_obj_set_size(volt_card, 272, 68);
+  lv_obj_align(volt_card, LV_ALIGN_CENTER, 0, -40);
+  lv_obj_set_style_radius(volt_card, 16, 0);
+  lv_obj_set_style_bg_color(volt_card, lv_color_hex(0x182230), 0);
+  lv_obj_set_style_border_color(volt_card, lv_color_hex(0x2B3B4E), 0);
+  lv_obj_set_style_border_width(volt_card, 1, 0);
+  lv_obj_set_style_pad_hor(volt_card, 16, 0);
+  lv_obj_remove_flag(volt_card, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_add_flag(volt_card, LV_OBJ_FLAG_EVENT_BUBBLE);
+
+  lv_obj_t *bolt_img = lv_image_create(volt_card);
+  if (volt_icon_snap) {
+    lv_image_set_src(bolt_img, volt_icon_snap);
+  }
+  lv_obj_align(bolt_img, LV_ALIGN_LEFT_MID, 0, 0);
+
+  lv_obj_t *volt_title = lv_label_create(volt_card);
+  lv_label_set_text(volt_title, "VOLTAGE");
+  lv_obj_set_style_text_color(volt_title, lv_color_hex(0x64748B), 0);
+  lv_obj_align(volt_title, LV_ALIGN_TOP_RIGHT, 0, 8);
+
+  volt_val_lbl = lv_label_create(volt_card);
+  lv_label_set_text(volt_val_lbl, "14.2 V");
+  lv_obj_set_style_text_color(volt_val_lbl, lv_color_hex(0xFACC15), 0);
+  lv_obj_align(volt_val_lbl, LV_ALIGN_BOTTOM_RIGHT, 0, -8);
+
+  // ---------------------------------------------------------------------
+  // Bottom Row Card: Corn Bitmap + Live Ethanol Readout
+  // ---------------------------------------------------------------------
+  lv_obj_t *eth_card = lv_obj_create(bezel);
+  lv_obj_set_size(eth_card, 272, 68);
+  lv_obj_align(eth_card, LV_ALIGN_CENTER, 0, 44);
+  lv_obj_set_style_radius(eth_card, 16, 0);
+  lv_obj_set_style_bg_color(eth_card, lv_color_hex(0x182230), 0);
+  lv_obj_set_style_border_color(eth_card, lv_color_hex(0x2B3B4E), 0);
+  lv_obj_set_style_border_width(eth_card, 1, 0);
+  lv_obj_set_style_pad_hor(eth_card, 16, 0);
+  lv_obj_remove_flag(eth_card, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_add_flag(eth_card, LV_OBJ_FLAG_EVENT_BUBBLE);
+
+  lv_obj_t *corn_img = lv_image_create(eth_card);
+  if (ethanol_icon_snap) {
+    lv_image_set_src(corn_img, ethanol_icon_snap);
+  }
+  lv_obj_align(corn_img, LV_ALIGN_LEFT_MID, 0, 0);
+
+  lv_obj_t *eth_title = lv_label_create(eth_card);
+  lv_label_set_text(eth_title, "ETHANOL");
+  lv_obj_set_style_text_color(eth_title, lv_color_hex(0x64748B), 0);
+  lv_obj_align(eth_title, LV_ALIGN_TOP_RIGHT, 0, 8);
+
+  ethanol_val_lbl = lv_label_create(eth_card);
+  lv_label_set_text(ethanol_val_lbl, "E85 (85%)");
+  lv_obj_set_style_text_color(ethanol_val_lbl, lv_color_hex(0x4ADE80), 0);
+  lv_obj_align(ethanol_val_lbl, LV_ALIGN_BOTTOM_RIGHT, 0, -8);
+  // Initialize default values
+  ui_gauges_set_voltage_tenths(142);
+  ui_gauges_set_ethanol_pct(85);
+}
+
+// -------------------------------------------------------------------------
+// Voltage Data Updater (Called from loop on Core 1)
+// -------------------------------------------------------------------------
+void ui_gauges_set_voltage_tenths(int32_t volts_tenths) {
+  if (volts_tenths == last_volts) return;
+  last_volts = volts_tenths;
+
+  int32_t whole = volts_tenths / 10;
+  int32_t frac = abs(volts_tenths % 10);
+
+  lv_color_t v_color = lv_color_hex(0xFACC15);  // Healthy yellow
+  if (volts_tenths < 122) {
+    v_color = lv_color_hex(0xEF4444);  // Low voltage red
+  } else if (volts_tenths > 152) {
+    v_color = lv_color_hex(0xF97316);  // Over-voltage orange
+  } else if (volts_tenths < 132) {
+    v_color = lv_color_hex(0x38BDF8);  // Key-on / idle blue
+  }
+
+  if (volt_val_lbl) {
+    lv_label_set_text_fmt(volt_val_lbl, "%ld.%ld V", whole, frac);
+    lv_obj_set_style_text_color(volt_val_lbl, v_color, 0);
+  }
+}
+
+void ui_gauges_set_ethanol_pct(int32_t ethanol_pct) {
+  ethanol_pct = LV_CLAMP(0, ethanol_pct, 100);
+  if (ethanol_pct == last_ethanol) return;
+  last_ethanol = ethanol_pct;
+
+  if (ethanol_val_lbl) {
+    lv_label_set_text_fmt(ethanol_val_lbl, "E%ld (%ld%%)", ethanol_pct, ethanol_pct);
+
+    // High ethanol (E60+) glows bright green/gold; low blend stays clean silver/blue
+    if (ethanol_pct >= 60) {
+      lv_obj_set_style_text_color(ethanol_val_lbl, lv_color_hex(0x4ADE80), 0);
+    } else if (ethanol_pct >= 25) {
+      lv_obj_set_style_text_color(ethanol_val_lbl, lv_color_hex(0xFACC15), 0);
+    } else {
+      lv_obj_set_style_text_color(ethanol_val_lbl, lv_color_hex(0xCBD5E1), 0);
+    }
+  }
 }
 
 // -------------------------------------------------------------------------
@@ -633,13 +876,16 @@ void ui_gauges_create(lv_obj_t *parent) {
   build_fans_tile(tile2);
 
   // Tile 3 (Table Switching): swipe left -> Tile 2
-  lv_obj_t *tile3 = lv_tileview_add_tile(tileview, 3, 0, LV_DIR_LEFT);
+  lv_obj_t *tile3 = lv_tileview_add_tile(tileview, 3, 0, LV_DIR_HOR);
   build_tables_tile(tile3);
 
+  // Tile 4 (System Voltage): swipe left -> Tile 3
+  lv_obj_t *tile4 = lv_tileview_add_tile(tileview, 4, 0, LV_DIR_LEFT);
+  build_voltage_tile(tile4);
 
-  // Subtle top page indicator dots (inside circular safe zone)
+  /// 5 Top Page Indicator Dots inside dots_container (82px wide)
   dots_container = lv_obj_create(parent);
-  lv_obj_set_size(dots_container, 68, 16);
+  lv_obj_set_size(dots_container, 82, 16);
   lv_obj_align(dots_container, LV_ALIGN_TOP_MID, 0, 12);
   lv_obj_set_style_bg_opa(dots_container, LV_OPA_TRANSP, 0);
   lv_obj_set_style_border_width(dots_container, 0, 0);
@@ -648,9 +894,9 @@ void ui_gauges_create(lv_obj_t *parent) {
   lv_obj_remove_flag(dots_container, LV_OBJ_FLAG_CLICKABLE);
   lv_obj_remove_flag(dots_container, LV_OBJ_FLAG_SCROLLABLE);
 
-  lv_obj_t **dot_ptrs[] = { &dot_1, &dot_2, &dot_3, &dot_4 };
-  const int32_t dot_x[] = { -21, -7, 7, 21 };
-  for (int i = 0; i < 4; i++) {
+  lv_obj_t **dot_ptrs[] = { &dot_1, &dot_2, &dot_3, &dot_4, &dot_5 };
+  const int32_t dot_x[] = { -28, -14, 0, 14, 28 };
+  for (int i = 0; i < 5; i++) {
     *dot_ptrs[i] = lv_obj_create(dots_container);
     lv_obj_set_size(*dot_ptrs[i], 7, 7);
     lv_obj_align(*dot_ptrs[i], LV_ALIGN_CENTER, dot_x[i], 0);
