@@ -1,6 +1,6 @@
 profiles:
   xiao_esp32s3_plus:
-    fqbn: esp32:esp32:XIAO_ESP32S3_Plus:PSRAM=opi,USBMode=hwcdc,CDCOnBoot=default,CPUFreq=240,FlashMode=qio,FlashSize=16M,PartitionScheme=fatflash
+    fqbn: esp32:esp32:XIAO_ESP32S3_Plus:PSRAM=opi,USBMode=hwcdc,CDCOnBoot=default,CPUFreq=240,FlashMode=qio,FlashSize=16M,PartitionScheme=app3M_fat9M_16MB
     platforms:
       - platform: esp32:esp32 (4.0.0)
         platform_index_url: https://github.io
