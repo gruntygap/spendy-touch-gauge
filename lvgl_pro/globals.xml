@@ -1,0 +1,62 @@
+<globals>
+    <api>
+    </api>
+
+    <consts>
+        <color name="color_bg_screen" value="0x0b1017"/>
+        <color name="color_bg_bezel" value="0x111822"/>
+        <color name="color_border_bezel" value="0x263547"/>
+        <color name="color_bg_card" value="0x182230"/>
+        <color name="color_border_card" value="0x2b3b4e"/>
+
+        <color name="color_text_white" value="0xf1f5f9"/>
+        <color name="color_text_muted" value="0x64748b"/>
+        <color name="color_text_sub" value="0xcbd5e1"/>
+
+        <color name="color_boost_cyan" value="0x38bdf8"/>
+        <color name="color_boost_warn" value="0xff5a36"/>
+        <color name="color_coolant_green" value="0x10b981"/>
+        <color name="color_coolant_amber" value="0xf59e0b"/>
+        <color name="color_coolant_red" value="0xef4444"/>
+
+        <color name="color_volt_yellow" value="0xfacc15"/>
+        <color name="color_eth_green" value="0x4ade80"/>
+        <color name="color_fan_blue" value="0x0ea5e9"/>
+
+        <int name="screen_size" value="360"/>
+        <int name="bezel_size" value="352"/>
+    </consts>
+
+    <subjects>
+        <!-- Telemetry Data (Raw Tenths & Values) -->
+        <int name="subject_boost_psi_tenths" value="0" min_value="-100" max_value="200"/>
+        <int name="subject_coolant_temp_tenths" value="1850" min_value="1000" max_value="2600"/>
+        <int name="subject_battery_volts_tenths" value="142" min_value="100" max_value="180"/>
+        <int name="subject_ethanol_pct" value="85" min_value="0" max_value="100"/>
+
+        <!-- Controls & Switch States -->
+        <int name="subject_fan_primary" value="0" min_value="0" max_value="1"/>
+        <int name="subject_fan_secondary" value="0" min_value="0" max_value="1"/>
+        <int name="subject_fuel_table_2" value="0" min_value="0" max_value="1"/>
+        <int name="subject_ign_table_2" value="0" min_value="0" max_value="1"/>
+
+        <!-- UI Navigation & Settings -->
+        <int name="subject_brightness" value="80" min_value="5" max_value="100"/>
+        <int name="subject_active_tile" value="0" min_value="0" max_value="4"/>
+        <int name="subject_drawer_open" value="0" min_value="0" max_value="1"/>
+        <int name="subject_dots_visible" value="0" min_value="0" max_value="1"/>
+    </subjects>
+
+    <images>
+    </images>
+
+    <fonts>
+    </fonts>
+
+    <styles>
+        <style name="style_bezel" width="352" height="352" align="center" radius="176" bg_color="0x111822" bg_opa="100%" border_color="0x263547" border_width="3" pad_all="0"/>
+        <style name="style_card" radius="14" bg_color="0x182230" bg_opa="100%" border_color="0x2b3b4e" border_width="1" pad_hor="14"/>
+        <style name="style_page_header" text_color="0x64748b"/>
+        <style name="style_text_primary" text_color="0xf1f5f9"/>
+    </styles>
+</globals>

@@ -1,0 +1,34 @@
+<component>
+    <view width="360" height="360" style_bg_opa="0" style_border_width="0" style_pad_all="0">
+        <!-- Bottom Grab Zone with Pill (Tap to open drawer) -->
+        <lv_obj width="360" height="75" align="bottom_mid" style_bg_opa="0" style_border_width="0" style_pad_all="0">
+            <lv_obj width="56" height="7" align="bottom_mid" y="-14" style_radius="4"
+                    style_bg_color="0x64788e" style_border_width="0"
+                    style_bg_opa="{subject_drawer_open == 0 ? 255 : 0}">
+                <set_subject_event subject="subject_drawer_open" value="1" trigger="clicked"/>
+            </lv_obj>
+        </lv_obj>
+
+        <!-- Slide-up Full Screen Settings Drawer (Round Circle 360x360) -->
+        <lv_obj width="360" height="360" style_radius="180"
+                style_bg_color="0x1c2836" style_bg_opa="100%"
+                style_border_color="0x3a5068" style_border_width="2" style_pad_all="0"
+                y="{subject_drawer_open == 1 ? 0 : 360}">
+            
+            <!-- Top Handle Pill (Tap to close drawer) -->
+            <lv_obj width="60" height="8" align="top_mid" y="16" style_radius="4"
+                    style_bg_color="0x8fa5bd" style_border_width="0">
+                <set_subject_event subject="subject_drawer_open" value="0" trigger="clicked"/>
+            </lv_obj>
+
+            <!-- Title -->
+            <lv_label text="Settings" align="top_mid" y="36" style_text_color="0xffffff"/>
+
+            <!-- Reactive Brightness Label -->
+            <lv_label text="{'Brightness: ' . subject_brightness . '%'}" align="center" y="-18" style_text_color="0xd0dce8"/>
+
+            <!-- Brightness Slider -->
+            <lv_slider bind_value="subject_brightness" width="230" height="22" align="center" y="20" min_value="5" max_value="100"/>
+        </lv_obj>
+    </view>
+</component>

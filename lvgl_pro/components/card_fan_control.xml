@@ -1,0 +1,32 @@
+<component>
+    <view width="352" height="352" align="center" style_radius="176" style_bg_color="0x111822" style_bg_opa="100%" style_border_color="0x263547" style_border_width="3" style_pad_all="0">
+        <!-- Header -->
+        <lv_label text="COOLING FANS" align="top_mid" y="36" style_text_color="0x64748b"/>
+
+        <!-- Primary Fan Control Card -->
+        <lv_obj width="272" height="58" align="center" y="-52" style_radius="14" style_bg_color="0x182230" style_bg_opa="100%" style_border_color="0x2b3b4e" style_border_width="1" style_pad_hor="12">
+            <icon_fan align="left_mid" x="12"/>
+            <lv_label text="Primary Fan" align="left_mid" x="64" style_text_color="0xf1f5f9"/>
+            <lv_switch bind_checked="subject_fan_primary" width="50" height="26" align="right_mid" x="-12"
+                       style_bg_color="0x334155" style_bg_color-indicator-checked="0x0ea5e9"/>
+        </lv_obj>
+
+        <!-- Secondary Fan Control Card -->
+        <lv_obj width="272" height="58" align="center" y="16" style_radius="14" style_bg_color="0x182230" style_bg_opa="100%" style_border_color="0x2b3b4e" style_border_width="1" style_pad_hor="12">
+            <icon_fan align="left_mid" x="12"/>
+            <lv_label text="Secondary Fan" align="left_mid" x="64" style_text_color="0xf1f5f9"/>
+            <lv_switch bind_checked="subject_fan_secondary" width="50" height="26" align="right_mid" x="-12"
+                       style_bg_color="0x334155" style_bg_color-indicator-checked="0x0ea5e9"/>
+        </lv_obj>
+
+        <!-- Compact Horizontal Coolant Temperature Bar -->
+        <lv_label text="{'Coolant: ' . subject_coolant_temp_tenths / 10 . ' °F'}" align="center" y="68" style_text_color="0xcbd5e1"/>
+        <lv_bar width="196" height="12" align="center" y="90"
+                min_value="1000" max_value="2600"
+                value="{subject_coolant_temp_tenths}"
+                style_radius="6"
+                style_bg_color="0x1e293b" style_bg_opa="100%"
+                style_bg_color-indicator="{subject_coolant_temp_tenths GE 2250 ? 0xef4444 : (subject_coolant_temp_tenths GE 2050 ? 0xf59e0b : 0x10b981)}"
+                style_bg_opa-indicator="100%"/>
+    </view>
+</component>

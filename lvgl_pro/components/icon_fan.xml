@@ -1,0 +1,27 @@
+<component>
+    <styles>
+        <style name="style_blade" radius="4" bg_color="0x38bdf8" bg_opa="100%"/>
+    </styles>
+
+    <view width="45" height="45" style_bg_opa="0" style_border_width="0" style_pad_all="0">
+        <!-- Circular Shroud -->
+        <lv_obj width="41" height="41" align="center" style_radius="20" style_bg_opa="0" style_border_color="0x334155" style_border_width="2" style_pad_all="0"/>
+
+        <!-- 4 Symmetrical Fan Blades -->
+        <lv_obj width="9" height="15" align="center" y="-10">
+            <style name="style_blade"/>
+        </lv_obj>
+        <lv_obj width="15" height="9" align="center" x="10">
+            <style name="style_blade"/>
+        </lv_obj>
+        <lv_obj width="9" height="15" align="center" y="10">
+            <style name="style_blade"/>
+        </lv_obj>
+        <lv_obj width="15" height="9" align="center" x="-10">
+            <style name="style_blade"/>
+        </lv_obj>
+
+        <!-- Motor Hub -->
+        <lv_obj width="13" height="13" align="center" style_radius="6" style_bg_color="0xe2e8f0" style_bg_opa="100%" style_border_color="0x0f172a" style_border_width="2" style_pad_all="0"/>
+    </view>
+</component>

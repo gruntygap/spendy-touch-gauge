@@ -1,0 +1,72 @@
+<screen>
+	<view
+		width="360"
+		height="360"
+		style_bg_color="0x0b1017"
+		style_bg_opa="100%"
+		style_border_width="0"
+		style_pad_all="0"
+	>
+		<!-- 5-Tile Horizontal Snap Carousel -->
+		<lv_obj
+			width="360"
+			height="360"
+			flex_flow="row"
+			scroll_snap_x="center"
+			scrollbar_mode="off"
+			style_bg_opa="0"
+			style_border_width="0"
+			style_pad_all="0"
+		>
+			<!-- Tile 0: Boost Gauge (-10.0 to 20.0 PSI) -->
+			<lv_obj
+				width="360"
+				height="360"
+				style_bg_opa="0"
+				style_border_width="0"
+				style_pad_all="0"
+			>
+				<gauge_boost />
+			</lv_obj>
+
+			<!-- Tile 1: Coolant Temperature Arc Gauge (100 to 260 °F) -->
+			<lv_obj
+				width="360"
+				height="360"
+				style_bg_opa="0"
+				style_border_width="0"
+				style_pad_all="0"
+			>
+				<gauge_coolant />
+			</lv_obj>
+
+			<!-- Tile 2: Cooling Fans Control & Mini Coolant Bar -->
+			<lv_obj
+				width="360"
+				height="360"
+				style_bg_opa="0"
+				style_border_width="0"
+				style_pad_all="0"
+			>
+				<card_fan_control />
+			</lv_obj>
+
+			<!-- Tile 3: Fuel & Ignition Table Switching -->
+			<lv_obj
+				width="360"
+				height="360"
+				style_bg_opa="0"
+				style_border_width="0"
+				style_pad_all="0"
+			>
+				<card_table_switch />
+			</lv_obj>
+		</lv_obj>
+
+		<!-- Top Page Indicator Dots Overlay -->
+		<page_dots />
+
+		<!-- Slide-Up Settings Drawer Overlay -->
+		<drawer_settings />
+	</view>
+</screen>

@@ -1,0 +1,24 @@
+<component>
+    <view width="352" height="352" align="center" style_radius="176" style_bg_color="0x111822" style_bg_opa="100%" style_border_color="0x263547" style_border_width="3" style_pad_all="0">
+        <!-- Circular Dial Scale (-10.0 to +20.0 PSI) -->
+        <lv_scale width="326" height="326" align="center" mode="round_inner"
+                  min_value="-100" max_value="200"
+                  total_tick_count="31" major_tick_every="5"
+                  angle_range="270" rotation="135"
+                  label_show="true"
+                  style_arc_width="4" style_arc_color="0x334155"
+                  style_line_width-indicator="3" style_length-indicator="16" style_line_color-indicator="0x94a3b8" style_text_color-indicator="0xcbd5e1"
+                  style_line_width-items="2" style_length-items="8" style_line_color-items="0x475569"/>
+
+        <!-- Center Needle Pivot Hub -->
+        <lv_obj width="30" height="30" align="center" style_radius="15" style_bg_color="0x1e293b" style_bg_opa="100%" style_border_color="0x64748b" style_border_width="2" style_pad_all="0"/>
+
+        <!-- Reactive Digital Readout (Dynamic Color based on vacuum / boost / warning) -->
+        <lv_label text="{subject_boost_psi_tenths / 10.0 . ' PSI'}"
+                  align="bottom_mid" y="-68"
+                  style_text_color="{subject_boost_psi_tenths GE 140 ? 0xff5a36 : (subject_boost_psi_tenths GT 0 ? 0x38bdf8 : 0xf1f5f9)}"/>
+
+        <!-- Bottom Static Title -->
+        <lv_label text="BOOST PSI" align="bottom_mid" y="-46" style_text_color="0x64748b"/>
+    </view>
+</component>
