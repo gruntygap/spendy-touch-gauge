@@ -11,7 +11,14 @@ static std::atomic<int32_t> g_boost_psi_tenths{ 0 };
 static std::atomic<int32_t> g_coolant_temp_f{ 185 };
 static std::atomic<bool> g_primary_fan_on{ false };
 static std::atomic<bool> g_secondary_fan_on{ false };
+static std::atomic<bool> g_fuel_table_2_active{false};
+static std::atomic<bool> g_ign_table_2_active{false};
 static std::atomic<bool> g_demo_mode{ true };
+
+static void on_table_toggled(uint8_t table_index, bool table2_active) {
+    if (table_index == 0) g_fuel_table_2_active.store(table2_active, std::memory_order_relaxed);
+    if (table_index == 1) g_ign_table_2_active.store(table2_active, std::memory_order_relaxed);
+}
 
 // Core 0: High-Speed Telemetry / CAN Bus Sampling Task
 void data_sampling_task(void *pvParameters) {
@@ -71,6 +78,7 @@ void setup() {
 void loop() {
   ui_gauges_set_boost_tenths(g_boost_psi_tenths.load(std::memory_order_relaxed));
   ui_gauges_set_coolant_tenths(g_coolant_temp_f.load(std::memory_order_relaxed));
+  ui_gauges_set_table_callback(on_table_toggled);
 
   lv_timer_handler();
   delay(1);

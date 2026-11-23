@@ -7,6 +7,7 @@ static lv_obj_t *dots_container = nullptr;
 static lv_obj_t *dot_1 = nullptr;
 static lv_obj_t *dot_2 = nullptr;
 static lv_obj_t *dot_3 = nullptr;
+static lv_obj_t *dot_4 = nullptr;
 
 // Tile 0: Boost Gauge (-10.0 to 20.0 PSI)
 static lv_obj_t *boost_scale = nullptr;
@@ -29,24 +30,172 @@ static fan_toggle_cb_t user_fan_cb = nullptr;
 static lv_obj_t *fan_temp_bar = nullptr;
 static lv_obj_t *fan_temp_lbl = nullptr;
 
-void ui_gauges_set_fan_callback(fan_toggle_cb_t cb) {
-  user_fan_cb = cb;
+// Tile 3: Table Switching (0 = Fuel VE Table, 1 = Ignition Table)
+static lv_obj_t *table_sw[2] = { nullptr, nullptr };
+static lv_obj_t *table_badge_1[2] = { nullptr, nullptr };
+static lv_obj_t *table_badge_2[2] = { nullptr, nullptr };
+static table_toggle_cb_t user_table_cb = nullptr;
+
+void ui_gauges_set_table_callback(table_toggle_cb_t cb) {
+  user_table_cb = cb;
 }
 
-// Update page indicator dots when user swipes left/right
+// -------------------------------------------------------------------------
+// Update tileview_changed_cb for 4 pages
+// -------------------------------------------------------------------------
 static void tileview_changed_cb(lv_event_t *e) {
   lv_obj_t *tv = lv_event_get_target_obj(e);
   lv_obj_t *active = lv_tileview_get_tile_active(tv);
   uint32_t idx = lv_obj_get_index(active);
 
-  if (dot_1 && dot_2 && dot_3) {
-    lv_obj_set_style_bg_color(dot_1, lv_color_hex(idx == 0 ? 0x38BDF8 : 0x334155), 0);
-    lv_obj_set_style_bg_color(dot_2, lv_color_hex(idx == 1 ? 0x38BDF8 : 0x334155), 0);
-    lv_obj_set_style_bg_color(dot_3, lv_color_hex(idx == 2 ? 0x38BDF8 : 0x334155), 0);
+  lv_obj_t *dots[] = { dot_1, dot_2, dot_3, dot_4 };
+  for (uint32_t i = 0; i < 4; i++) {
+    if (dots[i]) {
+      lv_obj_set_style_bg_color(dots[i], lv_color_hex(idx == i ? 0x38BDF8 : 0x334155), 0);
+    }
   }
 
   extern void ui_drawer_notify_touch();
   ui_drawer_notify_touch();
+}
+
+// -------------------------------------------------------------------------
+// Table State & Highlight Logic (OFF = Table 1 active, ON = Table 2 active)
+// -------------------------------------------------------------------------
+void ui_gauges_set_table_state(uint8_t idx, bool table2_active) {
+  if (idx > 1) return;
+
+  if (table_sw[idx]) {
+    bool currently_checked = lv_obj_has_state(table_sw[idx], LV_STATE_CHECKED);
+    if (table2_active && !currently_checked) {
+      lv_obj_add_state(table_sw[idx], LV_STATE_CHECKED);
+    } else if (!table2_active && currently_checked) {
+      lv_obj_remove_state(table_sw[idx], LV_STATE_CHECKED);
+    }
+  }
+
+  // Highlight "1" when switch is OFF, highlight "2" when switch is ON
+  if (table_badge_1[idx] && table_badge_2[idx]) {
+    if (!table2_active) {
+      // Table 1 Active (cyan glow), Table 2 Dimmed
+      lv_obj_set_style_bg_color(table_badge_1[idx], lv_color_hex(0x0EA5E9), 0);
+      lv_obj_set_style_text_color(lv_obj_get_child(table_badge_1[idx], 0), lv_color_hex(0xFFFFFF), 0);
+
+      lv_obj_set_style_bg_color(table_badge_2[idx], lv_color_hex(0x1E293B), 0);
+      lv_obj_set_style_text_color(lv_obj_get_child(table_badge_2[idx], 0), lv_color_hex(0x475569), 0);
+    } else {
+      // Table 1 Dimmed, Table 2 Active (amber/orange performance highlight)
+      lv_obj_set_style_bg_color(table_badge_1[idx], lv_color_hex(0x1E293B), 0);
+      lv_obj_set_style_text_color(lv_obj_get_child(table_badge_1[idx], 0), lv_color_hex(0x475569), 0);
+
+      lv_obj_set_style_bg_color(table_badge_2[idx], lv_color_hex(0xF59E0B), 0);
+      lv_obj_set_style_text_color(lv_obj_get_child(table_badge_2[idx], 0), lv_color_hex(0x0F172A), 0);
+    }
+  }
+}
+
+static void table_switch_event_cb(lv_event_t *e) {
+  lv_obj_t *sw = lv_event_get_target_obj(e);
+  uint8_t idx = static_cast<uint8_t>(reinterpret_cast<uintptr_t>(lv_event_get_user_data(e)));
+  bool table2_active = lv_obj_has_state(sw, LV_STATE_CHECKED);
+
+  ui_gauges_set_table_state(idx, table2_active);
+
+  if (user_table_cb) {
+    user_table_cb(idx, table2_active);
+  }
+}
+
+// -------------------------------------------------------------------------
+// Build Tile 3: Table Switching (Fuel VE Table & Ignition Table)
+// -------------------------------------------------------------------------
+static void build_tables_tile(lv_obj_t *parent) {
+  lv_obj_add_flag(parent, LV_OBJ_FLAG_EVENT_BUBBLE);
+
+  // Outer circular bezel matching the rest of the gauges
+  lv_obj_t *bezel = lv_obj_create(parent);
+  lv_obj_set_size(bezel, 352, 352);
+  lv_obj_center(bezel);
+  lv_obj_set_style_radius(bezel, LV_RADIUS_CIRCLE, 0);
+  lv_obj_set_style_bg_color(bezel, lv_color_hex(0x111822), 0);
+  lv_obj_set_style_border_color(bezel, lv_color_hex(0x263547), 0);
+  lv_obj_set_style_border_width(bezel, 3, 0);
+  lv_obj_set_style_pad_all(bezel, 0, 0);
+  lv_obj_remove_flag(bezel, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_add_flag(bezel, LV_OBJ_FLAG_EVENT_BUBBLE);
+
+  // Title at the top
+  lv_obj_t *header = lv_label_create(bezel);
+  lv_label_set_text(header, "Table switching");
+  lv_obj_set_style_text_color(header, lv_color_hex(0xCBD5E1), 0);
+  lv_obj_align(header, LV_ALIGN_TOP_MID, 0, 38);
+
+  const char *names[] = { "Fuel VE Table", "Ignition Table" };
+  const int32_t y_offsets[] = { -38, 46 };
+
+  for (uint8_t i = 0; i < 2; i++) {
+    // Card container inside the 360px circular safe zone
+    lv_obj_t *card = lv_obj_create(bezel);
+    lv_obj_set_size(card, 278, 68);
+    lv_obj_align(card, LV_ALIGN_CENTER, 0, y_offsets[i]);
+    lv_obj_set_style_radius(card, 14, 0);
+    lv_obj_set_style_bg_color(card, lv_color_hex(0x182230), 0);
+    lv_obj_set_style_border_color(card, lv_color_hex(0x2B3B4E), 0);
+    lv_obj_set_style_border_width(card, 1, 0);
+    lv_obj_set_style_pad_hor(card, 14, 0);
+    lv_obj_remove_flag(card, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(card, LV_OBJ_FLAG_EVENT_BUBBLE);
+
+    // Table name label on the left
+    lv_obj_t *lbl = lv_label_create(card);
+    lv_label_set_text(lbl, names[i]);
+    lv_obj_set_style_text_color(lbl, lv_color_hex(0xF1F5F9), 0);
+    lv_obj_align(lbl, LV_ALIGN_TOP_LEFT, 0, 8);
+
+    // "1" Indicator Badge (highlighted when toggle is OFF)
+    table_badge_1[i] = lv_obj_create(card);
+    lv_obj_set_size(table_badge_1[i], 26, 22);
+    lv_obj_align(table_badge_1[i], LV_ALIGN_BOTTOM_LEFT, 0, -6);
+    lv_obj_set_style_radius(table_badge_1[i], 6, 0);
+    lv_obj_set_style_border_width(table_badge_1[i], 0, 0);
+    lv_obj_set_style_pad_all(table_badge_1[i], 0, 0);
+    lv_obj_remove_flag(table_badge_1[i], LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_remove_flag(table_badge_1[i], LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *b1_lbl = lv_label_create(table_badge_1[i]);
+    lv_label_set_text(b1_lbl, "1");
+    lv_obj_center(b1_lbl);
+
+    // "2" Indicator Badge (highlighted when toggle is ON)
+    table_badge_2[i] = lv_obj_create(card);
+    lv_obj_set_size(table_badge_2[i], 26, 22);
+    lv_obj_align(table_badge_2[i], LV_ALIGN_BOTTOM_LEFT, 32, -6);
+    lv_obj_set_style_radius(table_badge_2[i], 6, 0);
+    lv_obj_set_style_border_width(table_badge_2[i], 0, 0);
+    lv_obj_set_style_pad_all(table_badge_2[i], 0, 0);
+    lv_obj_remove_flag(table_badge_2[i], LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_remove_flag(table_badge_2[i], LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *b2_lbl = lv_label_create(table_badge_2[i]);
+    lv_label_set_text(b2_lbl, "2");
+    lv_obj_center(b2_lbl);
+
+    // Toggle switch on the right
+    table_sw[i] = lv_switch_create(card);
+    lv_obj_set_size(table_sw[i], 52, 28);
+    lv_obj_align(table_sw[i], LV_ALIGN_RIGHT_MID, 0, 0);
+    lv_obj_set_style_bg_color(table_sw[i], lv_color_hex(0x334155), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(table_sw[i], lv_color_hex(0xF59E0B), LV_PART_INDICATOR | LV_STATE_CHECKED);
+    lv_obj_add_event_cb(table_sw[i], table_switch_event_cb, LV_EVENT_VALUE_CHANGED,
+                        reinterpret_cast<void *>(static_cast<uintptr_t>(i)));
+
+    // Default to OFF -> Table 1 highlighted
+    ui_gauges_set_table_state(i, false);
+  }
+}
+
+void ui_gauges_set_fan_callback(fan_toggle_cb_t cb) {
+  user_fan_cb = cb;
 }
 
 static lv_draw_buf_t *create_fan_bitmap(lv_obj_t *temp_parent) {
@@ -172,96 +321,96 @@ static void fan_switch_event_cb(lv_event_t *e) {
 // Build Tile 2: Primary & Secondary Fan Control Page
 // -------------------------------------------------------------------------
 static void build_fans_tile(lv_obj_t *parent) {
-    lv_obj_add_flag(parent, LV_OBJ_FLAG_EVENT_BUBBLE);
+  lv_obj_add_flag(parent, LV_OBJ_FLAG_EVENT_BUBBLE);
 
-    if (!fan_icon_snap) {
-        fan_icon_snap = create_fan_bitmap(parent);
+  if (!fan_icon_snap) {
+    fan_icon_snap = create_fan_bitmap(parent);
+  }
+
+  // Outer circular bezel
+  lv_obj_t *bezel = lv_obj_create(parent);
+  lv_obj_set_size(bezel, 352, 352);
+  lv_obj_center(bezel);
+  lv_obj_set_style_radius(bezel, LV_RADIUS_CIRCLE, 0);
+  lv_obj_set_style_bg_color(bezel, lv_color_hex(0x111822), 0);
+  lv_obj_set_style_border_color(bezel, lv_color_hex(0x263547), 0);
+  lv_obj_set_style_border_width(bezel, 3, 0);
+  lv_obj_set_style_pad_all(bezel, 0, 0);
+  lv_obj_remove_flag(bezel, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_add_flag(bezel, LV_OBJ_FLAG_EVENT_BUBBLE);
+
+  // Page title
+  lv_obj_t *header = lv_label_create(bezel);
+  lv_label_set_text(header, "COOLING FANS");
+  lv_obj_set_style_text_color(header, lv_color_hex(0x64748B), 0);
+  lv_obj_align(header, LV_ALIGN_TOP_MID, 0, 36);
+
+  const char *names[] = { "Primary Fan", "Secondary Fan" };
+  const int32_t y_offsets[] = { -52, 16 };
+
+  for (uint8_t i = 0; i < 2; i++) {
+    lv_obj_t *card = lv_obj_create(bezel);
+    lv_obj_set_size(card, 272, 58);
+    lv_obj_align(card, LV_ALIGN_CENTER, 0, y_offsets[i]);
+    lv_obj_set_style_radius(card, 14, 0);
+    lv_obj_set_style_bg_color(card, lv_color_hex(0x182230), 0);
+    lv_obj_set_style_border_color(card, lv_color_hex(0x2B3B4E), 0);
+    lv_obj_set_style_border_width(card, 1, 0);
+    lv_obj_set_style_pad_hor(card, 12, 0);
+    lv_obj_remove_flag(card, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(card, LV_OBJ_FLAG_EVENT_BUBBLE);
+
+    // Spinning fan bitmap on the left
+    fan_img[i] = lv_image_create(card);
+    if (fan_icon_snap) {
+      lv_image_set_src(fan_img[i], fan_icon_snap);
+      lv_image_set_pivot(fan_img[i],
+                         fan_icon_snap->header.w / 2,
+                         fan_icon_snap->header.h / 2);
     }
+    lv_obj_align(fan_img[i], LV_ALIGN_LEFT_MID, 0, 0);
 
-    // Outer circular bezel
-    lv_obj_t *bezel = lv_obj_create(parent);
-    lv_obj_set_size(bezel, 352, 352);
-    lv_obj_center(bezel);
-    lv_obj_set_style_radius(bezel, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_bg_color(bezel, lv_color_hex(0x111822), 0);
-    lv_obj_set_style_border_color(bezel, lv_color_hex(0x263547), 0);
-    lv_obj_set_style_border_width(bezel, 3, 0);
-    lv_obj_set_style_pad_all(bezel, 0, 0);
-    lv_obj_remove_flag(bezel, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_flag(bezel, LV_OBJ_FLAG_EVENT_BUBBLE);
+    // Primary / Secondary label
+    lv_obj_t *lbl = lv_label_create(card);
+    lv_label_set_text(lbl, names[i]);
+    lv_obj_set_style_text_color(lbl, lv_color_hex(0xF1F5F9), 0);
+    lv_obj_align(lbl, LV_ALIGN_LEFT_MID, 52, 0);
 
-    // Page title
-    lv_obj_t *header = lv_label_create(bezel);
-    lv_label_set_text(header, "COOLING FANS");
-    lv_obj_set_style_text_color(header, lv_color_hex(0x64748B), 0);
-    lv_obj_align(header, LV_ALIGN_TOP_MID, 0, 36);
+    // Toggle switch on the right
+    fan_sw[i] = lv_switch_create(card);
+    lv_obj_set_size(fan_sw[i], 50, 26);
+    lv_obj_align(fan_sw[i], LV_ALIGN_RIGHT_MID, 0, 0);
+    lv_obj_set_style_bg_color(fan_sw[i], lv_color_hex(0x334155), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(fan_sw[i], lv_color_hex(0x0EA5E9), LV_PART_INDICATOR | LV_STATE_CHECKED);
+    lv_obj_add_event_cb(fan_sw[i], fan_switch_event_cb, LV_EVENT_VALUE_CHANGED,
+                        reinterpret_cast<void *>(static_cast<uintptr_t>(i)));
 
-    const char *names[] = {"Primary Fan", "Secondary Fan"};
-    const int32_t y_offsets[] = {-52, 16};
+    ui_gauges_set_fan_state(i, false);
+  }
 
-    for (uint8_t i = 0; i < 2; i++) {
-        lv_obj_t *card = lv_obj_create(bezel);
-        lv_obj_set_size(card, 272, 58);
-        lv_obj_align(card, LV_ALIGN_CENTER, 0, y_offsets[i]);
-        lv_obj_set_style_radius(card, 14, 0);
-        lv_obj_set_style_bg_color(card, lv_color_hex(0x182230), 0);
-        lv_obj_set_style_border_color(card, lv_color_hex(0x2B3B4E), 0);
-        lv_obj_set_style_border_width(card, 1, 0);
-        lv_obj_set_style_pad_hor(card, 12, 0);
-        lv_obj_remove_flag(card, LV_OBJ_FLAG_SCROLLABLE);
-        lv_obj_add_flag(card, LV_OBJ_FLAG_EVENT_BUBBLE);
+  // ---------------------------------------------------------------------
+  // Compact Horizontal Coolant Temperature Bar Beneath the Switches
+  // ---------------------------------------------------------------------
+  fan_temp_lbl = lv_label_create(bezel);
+  lv_label_set_text(fan_temp_lbl, "Coolant: 185 °F");
+  lv_obj_set_style_text_color(fan_temp_lbl, lv_color_hex(0xCBD5E1), 0);
+  lv_obj_align(fan_temp_lbl, LV_ALIGN_CENTER, 0, 68);
 
-        // Spinning fan bitmap on the left
-        fan_img[i] = lv_image_create(card);
-        if (fan_icon_snap) {
-            lv_image_set_src(fan_img[i], fan_icon_snap);
-            lv_image_set_pivot(fan_img[i],
-                               fan_icon_snap->header.w / 2,
-                               fan_icon_snap->header.h / 2);
-        }
-        lv_obj_align(fan_img[i], LV_ALIGN_LEFT_MID, 0, 0);
+  fan_temp_bar = lv_bar_create(bezel);
+  lv_obj_set_size(fan_temp_bar, 196, 12);
+  lv_obj_align(fan_temp_bar, LV_ALIGN_CENTER, 0, 90);
+  lv_bar_set_range(fan_temp_bar, 1000, 2600);  // Matches 100.0°F - 260.0°F range
+  lv_bar_set_value(fan_temp_bar, 1850, LV_ANIM_OFF);
+  lv_obj_remove_flag(fan_temp_bar, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_add_flag(fan_temp_bar, LV_OBJ_FLAG_EVENT_BUBBLE);
 
-        // Primary / Secondary label
-        lv_obj_t *lbl = lv_label_create(card);
-        lv_label_set_text(lbl, names[i]);
-        lv_obj_set_style_text_color(lbl, lv_color_hex(0xF1F5F9), 0);
-        lv_obj_align(lbl, LV_ALIGN_LEFT_MID, 52, 0);
+  lv_obj_set_style_radius(fan_temp_bar, LV_RADIUS_CIRCLE, LV_PART_MAIN);
+  lv_obj_set_style_bg_color(fan_temp_bar, lv_color_hex(0x1E293B), LV_PART_MAIN);
+  lv_obj_set_style_bg_opa(fan_temp_bar, LV_OPA_COVER, LV_PART_MAIN);
 
-        // Toggle switch on the right
-        fan_sw[i] = lv_switch_create(card);
-        lv_obj_set_size(fan_sw[i], 50, 26);
-        lv_obj_align(fan_sw[i], LV_ALIGN_RIGHT_MID, 0, 0);
-        lv_obj_set_style_bg_color(fan_sw[i], lv_color_hex(0x334155), LV_PART_MAIN);
-        lv_obj_set_style_bg_color(fan_sw[i], lv_color_hex(0x0EA5E9), LV_PART_INDICATOR | LV_STATE_CHECKED);
-        lv_obj_add_event_cb(fan_sw[i], fan_switch_event_cb, LV_EVENT_VALUE_CHANGED,
-                            reinterpret_cast<void *>(static_cast<uintptr_t>(i)));
-
-        ui_gauges_set_fan_state(i, false);
-    }
-
-    // ---------------------------------------------------------------------
-    // Compact Horizontal Coolant Temperature Bar Beneath the Switches
-    // ---------------------------------------------------------------------
-    fan_temp_lbl = lv_label_create(bezel);
-    lv_label_set_text(fan_temp_lbl, "Coolant: 185 °F");
-    lv_obj_set_style_text_color(fan_temp_lbl, lv_color_hex(0xCBD5E1), 0);
-    lv_obj_align(fan_temp_lbl, LV_ALIGN_CENTER, 0, 68);
-
-    fan_temp_bar = lv_bar_create(bezel);
-    lv_obj_set_size(fan_temp_bar, 196, 12);
-    lv_obj_align(fan_temp_bar, LV_ALIGN_CENTER, 0, 90);
-    lv_bar_set_range(fan_temp_bar, 1000, 2600); // Matches 100.0°F - 260.0°F range
-    lv_bar_set_value(fan_temp_bar, 1850, LV_ANIM_OFF);
-    lv_obj_remove_flag(fan_temp_bar, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_flag(fan_temp_bar, LV_OBJ_FLAG_EVENT_BUBBLE);
-
-    lv_obj_set_style_radius(fan_temp_bar, LV_RADIUS_CIRCLE, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(fan_temp_bar, lv_color_hex(0x1E293B), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(fan_temp_bar, LV_OPA_COVER, LV_PART_MAIN);
-
-    lv_obj_set_style_radius(fan_temp_bar, LV_RADIUS_CIRCLE, LV_PART_INDICATOR);
-    lv_obj_set_style_bg_color(fan_temp_bar, lv_color_hex(0x10B981), LV_PART_INDICATOR);
-    lv_obj_set_style_bg_opa(fan_temp_bar, LV_OPA_COVER, LV_PART_INDICATOR);
+  lv_obj_set_style_radius(fan_temp_bar, LV_RADIUS_CIRCLE, LV_PART_INDICATOR);
+  lv_obj_set_style_bg_color(fan_temp_bar, lv_color_hex(0x10B981), LV_PART_INDICATOR);
+  lv_obj_set_style_bg_opa(fan_temp_bar, LV_OPA_COVER, LV_PART_INDICATOR);
 }
 
 
@@ -480,13 +629,17 @@ void ui_gauges_create(lv_obj_t *parent) {
   build_coolant_tile(tile1);
 
   // Tile 2 (Cooling Fans): swipe left -> Tile 1
-  lv_obj_t *tile2 = lv_tileview_add_tile(tileview, 2, 0, LV_DIR_LEFT);
+  lv_obj_t *tile2 = lv_tileview_add_tile(tileview, 2, 0, LV_DIR_HOR);
   build_fans_tile(tile2);
+
+  // Tile 3 (Table Switching): swipe left -> Tile 2
+  lv_obj_t *tile3 = lv_tileview_add_tile(tileview, 3, 0, LV_DIR_LEFT);
+  build_tables_tile(tile3);
 
 
   // Subtle top page indicator dots (inside circular safe zone)
   dots_container = lv_obj_create(parent);
-  lv_obj_set_size(dots_container, 54, 16);
+  lv_obj_set_size(dots_container, 68, 16);
   lv_obj_align(dots_container, LV_ALIGN_TOP_MID, 0, 12);
   lv_obj_set_style_bg_opa(dots_container, LV_OPA_TRANSP, 0);
   lv_obj_set_style_border_width(dots_container, 0, 0);
@@ -495,29 +648,17 @@ void ui_gauges_create(lv_obj_t *parent) {
   lv_obj_remove_flag(dots_container, LV_OBJ_FLAG_CLICKABLE);
   lv_obj_remove_flag(dots_container, LV_OBJ_FLAG_SCROLLABLE);
 
-  dot_1 = lv_obj_create(dots_container);
-  lv_obj_set_size(dot_1, 7, 7);
-  lv_obj_align(dot_1, LV_ALIGN_CENTER, -14, 0);
-  lv_obj_set_style_radius(dot_1, LV_RADIUS_CIRCLE, 0);
-  lv_obj_set_style_bg_color(dot_1, lv_color_hex(0x38BDF8), 0);
-  lv_obj_set_style_border_width(dot_1, 0, 0);
-  lv_obj_remove_flag(dot_1, LV_OBJ_FLAG_CLICKABLE);
-
-  dot_2 = lv_obj_create(dots_container);
-  lv_obj_set_size(dot_2, 7, 7);
-  lv_obj_align(dot_2, LV_ALIGN_CENTER, 0, 0);
-  lv_obj_set_style_radius(dot_2, LV_RADIUS_CIRCLE, 0);
-  lv_obj_set_style_bg_color(dot_2, lv_color_hex(0x334155), 0);
-  lv_obj_set_style_border_width(dot_2, 0, 0);
-  lv_obj_remove_flag(dot_2, LV_OBJ_FLAG_CLICKABLE);
-
-  dot_3 = lv_obj_create(dots_container);
-  lv_obj_set_size(dot_3, 7, 7);
-  lv_obj_align(dot_3, LV_ALIGN_CENTER, 14, 0);
-  lv_obj_set_style_radius(dot_3, LV_RADIUS_CIRCLE, 0);
-  lv_obj_set_style_bg_color(dot_3, lv_color_hex(0x334155), 0);
-  lv_obj_set_style_border_width(dot_3, 0, 0);
-  lv_obj_remove_flag(dot_3, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_t **dot_ptrs[] = { &dot_1, &dot_2, &dot_3, &dot_4 };
+  const int32_t dot_x[] = { -21, -7, 7, 21 };
+  for (int i = 0; i < 4; i++) {
+    *dot_ptrs[i] = lv_obj_create(dots_container);
+    lv_obj_set_size(*dot_ptrs[i], 7, 7);
+    lv_obj_align(*dot_ptrs[i], LV_ALIGN_CENTER, dot_x[i], 0);
+    lv_obj_set_style_radius(*dot_ptrs[i], LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(*dot_ptrs[i], lv_color_hex(i == 0 ? 0x38BDF8 : 0x334155), 0);
+    lv_obj_set_style_border_width(*dot_ptrs[i], 0, 0);
+    lv_obj_remove_flag(*dot_ptrs[i], LV_OBJ_FLAG_CLICKABLE);
+  }
 }
 
 void ui_gauges_set_boost_tenths(int32_t psi_tenths) {
@@ -544,33 +685,33 @@ void ui_gauges_set_boost_tenths(int32_t psi_tenths) {
   }
 }
 void ui_gauges_set_coolant_tenths(int32_t temp_tenths) {
-    if (temp_tenths == last_temp) return;
-    last_temp = temp_tenths;
+  if (temp_tenths == last_temp) return;
+  last_temp = temp_tenths;
 
-    lv_color_t status_color = lv_color_hex(0x10B981); // Normal green
-    if (temp_tenths >= 2250) {
-        status_color = lv_color_hex(0xEF4444);        // High-temp red
-    } else if (temp_tenths >= 2050) {
-        status_color = lv_color_hex(0xF59E0B);        // Warm amber
-    }
+  lv_color_t status_color = lv_color_hex(0x10B981);  // Normal green
+  if (temp_tenths >= 2250) {
+    status_color = lv_color_hex(0xEF4444);  // High-temp red
+  } else if (temp_tenths >= 2050) {
+    status_color = lv_color_hex(0xF59E0B);  // Warm amber
+  }
 
-    // Update Tile 1 full-screen arc gauge
-    if (temp_arc) {
-        lv_arc_set_value(temp_arc, temp_tenths);
-        lv_obj_set_style_arc_color(temp_arc, status_color, LV_PART_INDICATOR);
-    }
-    if (temp_lbl) {
-        lv_label_set_text_fmt(temp_lbl, "%ld °F", temp_tenths / 10);
-    }
+  // Update Tile 1 full-screen arc gauge
+  if (temp_arc) {
+    lv_arc_set_value(temp_arc, temp_tenths);
+    lv_obj_set_style_arc_color(temp_arc, status_color, LV_PART_INDICATOR);
+  }
+  if (temp_lbl) {
+    lv_label_set_text_fmt(temp_lbl, "%ld °F", temp_tenths / 10);
+  }
 
-    // Update Tile 2 compact horizontal coolant bar beneath fan toggles
-    if (fan_temp_bar) {
-        lv_bar_set_value(fan_temp_bar, temp_tenths, LV_ANIM_OFF);
-        lv_obj_set_style_bg_color(fan_temp_bar, status_color, LV_PART_INDICATOR);
-    }
-    if (fan_temp_lbl) {
-        lv_label_set_text_fmt(fan_temp_lbl, "Coolant: %ld °F", temp_tenths / 10);
-    }
+  // Update Tile 2 compact horizontal coolant bar beneath fan toggles
+  if (fan_temp_bar) {
+    lv_bar_set_value(fan_temp_bar, temp_tenths, LV_ANIM_OFF);
+    lv_obj_set_style_bg_color(fan_temp_bar, status_color, LV_PART_INDICATOR);
+  }
+  if (fan_temp_lbl) {
+    lv_label_set_text_fmt(fan_temp_lbl, "Coolant: %ld °F", temp_tenths / 10);
+  }
 }
 
 
