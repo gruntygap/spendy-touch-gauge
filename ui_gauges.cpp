@@ -26,6 +26,9 @@ static lv_obj_t *fan_sw[2] = { nullptr, nullptr };
 static bool fan_running[2] = { false, false };
 static fan_toggle_cb_t user_fan_cb = nullptr;
 
+static lv_obj_t *fan_temp_bar = nullptr;
+static lv_obj_t *fan_temp_lbl = nullptr;
+
 void ui_gauges_set_fan_callback(fan_toggle_cb_t cb) {
   user_fan_cb = cb;
 }
@@ -169,73 +172,98 @@ static void fan_switch_event_cb(lv_event_t *e) {
 // Build Tile 2: Primary & Secondary Fan Control Page
 // -------------------------------------------------------------------------
 static void build_fans_tile(lv_obj_t *parent) {
-  lv_obj_add_flag(parent, LV_OBJ_FLAG_EVENT_BUBBLE);
+    lv_obj_add_flag(parent, LV_OBJ_FLAG_EVENT_BUBBLE);
 
-  if (!fan_icon_snap) {
-    fan_icon_snap = create_fan_bitmap(parent);
-  }
-
-  // Outer circular bezel matching the other gauges
-  lv_obj_t *bezel = lv_obj_create(parent);
-  lv_obj_set_size(bezel, 352, 352);
-  lv_obj_center(bezel);
-  lv_obj_set_style_radius(bezel, LV_RADIUS_CIRCLE, 0);
-  lv_obj_set_style_bg_color(bezel, lv_color_hex(0x111822), 0);
-  lv_obj_set_style_border_color(bezel, lv_color_hex(0x263547), 0);
-  lv_obj_set_style_border_width(bezel, 3, 0);
-  lv_obj_set_style_pad_all(bezel, 0, 0);
-  lv_obj_remove_flag(bezel, LV_OBJ_FLAG_SCROLLABLE);
-  lv_obj_add_flag(bezel, LV_OBJ_FLAG_EVENT_BUBBLE);
-
-  // Page title
-  lv_obj_t *header = lv_label_create(bezel);
-  lv_label_set_text(header, "COOLING FANS");
-  lv_obj_set_style_text_color(header, lv_color_hex(0x64748B), 0);
-  lv_obj_align(header, LV_ALIGN_TOP_MID, 0, 42);
-
-  const char *names[2] = { "Primary Fan", "Secondary Fan" };
-  const int32_t y_offsets[2] = { -38, 46 };
-
-  for (uint8_t i = 0; i < 2; i++) {
-    // Row card sized to fit comfortably inside the 360px circular bezel
-    lv_obj_t *card = lv_obj_create(bezel);
-    lv_obj_set_size(card, 276, 68);
-    lv_obj_align(card, LV_ALIGN_CENTER, 0, y_offsets[i]);
-    lv_obj_set_style_radius(card, 16, 0);
-    lv_obj_set_style_bg_color(card, lv_color_hex(0x182230), 0);
-    lv_obj_set_style_border_color(card, lv_color_hex(0x2B3B4E), 0);
-    lv_obj_set_style_border_width(card, 1, 0);
-    lv_obj_set_style_pad_hor(card, 14, 0);
-    lv_obj_remove_flag(card, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_flag(card, LV_OBJ_FLAG_EVENT_BUBBLE);
-
-    // Small animated bitmap fan on the left
-    fan_img[i] = lv_image_create(card);
-    if (fan_icon_snap) {
-      lv_image_set_src(fan_img[i], fan_icon_snap);
-      lv_image_set_pivot(fan_img[i], fan_icon_snap->header.w / 2, fan_icon_snap->header.h / 2);
+    if (!fan_icon_snap) {
+        fan_icon_snap = create_fan_bitmap(parent);
     }
-    lv_obj_align(fan_img[i], LV_ALIGN_LEFT_MID, 0, 0);
 
-    // Label specifying Primary or Secondary
-    lv_obj_t *lbl = lv_label_create(card);
-    lv_label_set_text(lbl, names[i]);
-    lv_obj_set_style_text_color(lbl, lv_color_hex(0xF1F5F9), 0);
-    lv_obj_align(lbl, LV_ALIGN_LEFT_MID, 54, 0);
+    // Outer circular bezel
+    lv_obj_t *bezel = lv_obj_create(parent);
+    lv_obj_set_size(bezel, 352, 352);
+    lv_obj_center(bezel);
+    lv_obj_set_style_radius(bezel, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(bezel, lv_color_hex(0x111822), 0);
+    lv_obj_set_style_border_color(bezel, lv_color_hex(0x263547), 0);
+    lv_obj_set_style_border_width(bezel, 3, 0);
+    lv_obj_set_style_pad_all(bezel, 0, 0);
+    lv_obj_remove_flag(bezel, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(bezel, LV_OBJ_FLAG_EVENT_BUBBLE);
 
-    // Input switch on the right
-    fan_sw[i] = lv_switch_create(card);
-    lv_obj_set_size(fan_sw[i], 52, 28);
-    lv_obj_align(fan_sw[i], LV_ALIGN_RIGHT_MID, 0, 0);
-    lv_obj_set_style_bg_color(fan_sw[i], lv_color_hex(0x334155), LV_PART_MAIN);
-    lv_obj_set_style_bg_color(fan_sw[i], lv_color_hex(0x0EA5E9), LV_PART_INDICATOR | LV_STATE_CHECKED);
-    lv_obj_add_event_cb(fan_sw[i], fan_switch_event_cb, LV_EVENT_VALUE_CHANGED,
-                        reinterpret_cast<void *>(static_cast<uintptr_t>(i)));
+    // Page title
+    lv_obj_t *header = lv_label_create(bezel);
+    lv_label_set_text(header, "COOLING FANS");
+    lv_obj_set_style_text_color(header, lv_color_hex(0x64748B), 0);
+    lv_obj_align(header, LV_ALIGN_TOP_MID, 0, 36);
 
-    // Initialize stopped/dimmed state
-    ui_gauges_set_fan_state(i, false);
-  }
+    const char *names[] = {"Primary Fan", "Secondary Fan"};
+    const int32_t y_offsets[] = {-52, 16};
+
+    for (uint8_t i = 0; i < 2; i++) {
+        lv_obj_t *card = lv_obj_create(bezel);
+        lv_obj_set_size(card, 272, 58);
+        lv_obj_align(card, LV_ALIGN_CENTER, 0, y_offsets[i]);
+        lv_obj_set_style_radius(card, 14, 0);
+        lv_obj_set_style_bg_color(card, lv_color_hex(0x182230), 0);
+        lv_obj_set_style_border_color(card, lv_color_hex(0x2B3B4E), 0);
+        lv_obj_set_style_border_width(card, 1, 0);
+        lv_obj_set_style_pad_hor(card, 12, 0);
+        lv_obj_remove_flag(card, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_add_flag(card, LV_OBJ_FLAG_EVENT_BUBBLE);
+
+        // Spinning fan bitmap on the left
+        fan_img[i] = lv_image_create(card);
+        if (fan_icon_snap) {
+            lv_image_set_src(fan_img[i], fan_icon_snap);
+            lv_image_set_pivot(fan_img[i],
+                               fan_icon_snap->header.w / 2,
+                               fan_icon_snap->header.h / 2);
+        }
+        lv_obj_align(fan_img[i], LV_ALIGN_LEFT_MID, 0, 0);
+
+        // Primary / Secondary label
+        lv_obj_t *lbl = lv_label_create(card);
+        lv_label_set_text(lbl, names[i]);
+        lv_obj_set_style_text_color(lbl, lv_color_hex(0xF1F5F9), 0);
+        lv_obj_align(lbl, LV_ALIGN_LEFT_MID, 52, 0);
+
+        // Toggle switch on the right
+        fan_sw[i] = lv_switch_create(card);
+        lv_obj_set_size(fan_sw[i], 50, 26);
+        lv_obj_align(fan_sw[i], LV_ALIGN_RIGHT_MID, 0, 0);
+        lv_obj_set_style_bg_color(fan_sw[i], lv_color_hex(0x334155), LV_PART_MAIN);
+        lv_obj_set_style_bg_color(fan_sw[i], lv_color_hex(0x0EA5E9), LV_PART_INDICATOR | LV_STATE_CHECKED);
+        lv_obj_add_event_cb(fan_sw[i], fan_switch_event_cb, LV_EVENT_VALUE_CHANGED,
+                            reinterpret_cast<void *>(static_cast<uintptr_t>(i)));
+
+        ui_gauges_set_fan_state(i, false);
+    }
+
+    // ---------------------------------------------------------------------
+    // Compact Horizontal Coolant Temperature Bar Beneath the Switches
+    // ---------------------------------------------------------------------
+    fan_temp_lbl = lv_label_create(bezel);
+    lv_label_set_text(fan_temp_lbl, "Coolant: 185 °F");
+    lv_obj_set_style_text_color(fan_temp_lbl, lv_color_hex(0xCBD5E1), 0);
+    lv_obj_align(fan_temp_lbl, LV_ALIGN_CENTER, 0, 68);
+
+    fan_temp_bar = lv_bar_create(bezel);
+    lv_obj_set_size(fan_temp_bar, 196, 12);
+    lv_obj_align(fan_temp_bar, LV_ALIGN_CENTER, 0, 90);
+    lv_bar_set_range(fan_temp_bar, 1000, 2600); // Matches 100.0°F - 260.0°F range
+    lv_bar_set_value(fan_temp_bar, 1850, LV_ANIM_OFF);
+    lv_obj_remove_flag(fan_temp_bar, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_flag(fan_temp_bar, LV_OBJ_FLAG_EVENT_BUBBLE);
+
+    lv_obj_set_style_radius(fan_temp_bar, LV_RADIUS_CIRCLE, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(fan_temp_bar, lv_color_hex(0x1E293B), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(fan_temp_bar, LV_OPA_COVER, LV_PART_MAIN);
+
+    lv_obj_set_style_radius(fan_temp_bar, LV_RADIUS_CIRCLE, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(fan_temp_bar, lv_color_hex(0x10B981), LV_PART_INDICATOR);
+    lv_obj_set_style_bg_opa(fan_temp_bar, LV_OPA_COVER, LV_PART_INDICATOR);
 }
+
 
 static void build_boost_tile(lv_obj_t *parent) {
   lv_obj_add_flag(parent, LV_OBJ_FLAG_EVENT_BUBBLE);
@@ -516,24 +544,35 @@ void ui_gauges_set_boost_tenths(int32_t psi_tenths) {
   }
 }
 void ui_gauges_set_coolant_tenths(int32_t temp_tenths) {
-  if (temp_tenths == last_temp) return;
-  last_temp = temp_tenths;
+    if (temp_tenths == last_temp) return;
+    last_temp = temp_tenths;
 
-  if (temp_arc) {
-    lv_arc_set_value(temp_arc, temp_tenths);
+    lv_color_t status_color = lv_color_hex(0x10B981); // Normal green
     if (temp_tenths >= 2250) {
-      lv_obj_set_style_arc_color(temp_arc, lv_color_hex(0xEF4444), LV_PART_INDICATOR);
+        status_color = lv_color_hex(0xEF4444);        // High-temp red
     } else if (temp_tenths >= 2050) {
-      lv_obj_set_style_arc_color(temp_arc, lv_color_hex(0xF59E0B), LV_PART_INDICATOR);
-    } else {
-      lv_obj_set_style_arc_color(temp_arc, lv_color_hex(0x10B981), LV_PART_INDICATOR);
+        status_color = lv_color_hex(0xF59E0B);        // Warm amber
     }
-  }
 
-  if (temp_lbl) {
-    lv_label_set_text_fmt(temp_lbl, "%ld °F", temp_tenths / 10);
-  }
+    // Update Tile 1 full-screen arc gauge
+    if (temp_arc) {
+        lv_arc_set_value(temp_arc, temp_tenths);
+        lv_obj_set_style_arc_color(temp_arc, status_color, LV_PART_INDICATOR);
+    }
+    if (temp_lbl) {
+        lv_label_set_text_fmt(temp_lbl, "%ld °F", temp_tenths / 10);
+    }
+
+    // Update Tile 2 compact horizontal coolant bar beneath fan toggles
+    if (fan_temp_bar) {
+        lv_bar_set_value(fan_temp_bar, temp_tenths, LV_ANIM_OFF);
+        lv_obj_set_style_bg_color(fan_temp_bar, status_color, LV_PART_INDICATOR);
+    }
+    if (fan_temp_lbl) {
+        lv_label_set_text_fmt(fan_temp_lbl, "Coolant: %ld °F", temp_tenths / 10);
+    }
 }
+
 
 static void dots_opa_anim_cb(void *var, int32_t v) {
   lv_obj_set_style_opa(static_cast<lv_obj_t *>(var), static_cast<lv_opa_t>(v), 0);
