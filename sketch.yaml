@@ -1,0 +1,14 @@
+profiles:
+  xiao_esp32s3_plus:
+    fqbn: esp32:esp32:XIAO_ESP32S3_Plus:PSRAM=opi,USBMode=hwcdc,CDCOnBoot=default,CPUFreq=240,FlashMode=qio,FlashSize=16M,PartitionScheme=fatflash
+    platforms:
+      - platform: esp32:esp32 (4.0.0)
+        platform_index_url: https://github.io
+    libraries:
+      - lvgl (9.6.0)
+      - ST77916_QSPI (2.0.0)
+      - CST816S (1.1.1)
+      - Adafruit GFX Library (1.11.11)
+      - Adafruit BusIO (1.16.2)
+
+default_profile: xiao_esp32s3_plus
