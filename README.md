@@ -1,3 +1,15 @@
+# Spendy-touch-gauge
+
+Yet another gauge. Follow up from [this](https://github.com/gruntygap/cheapo-gauge).
+
+# Components
+
+| Item | Link |
+| :--- | :---: |
+| Can Bus Breakout for Seeed Studio XIAO | https://www.seeedstudio.com/Seeed-Studio-CAN-Bus-Breakout-Board-for-XIAO-and-QT-Py-p-5702.html?srsltid=AYCX9vL3NXZgqkbd9bWJNzHg8lQg5UtjEVwLIye2lbi1JMX22183kmvi |
+| XIAO Seeed Studio ESP32-S3 Plus | https://www.seeedstudio.com/Seeed-Studio-XIAO-ESP32S3-Plus-p-6361.html?srsltid=AYCX9vLRxjwKGE0vFwK-PI5mTr27Ex2W9yBosw3iMPDqbFukuc2bD4dt |
+| Waveshare 1.85" Touch Screen LCD | https://www.waveshare.com/1.85inch-touch-lcd-module.htm?srsltid=AYCX9vLjHqOh5nIDhFPLy6QjbOgcW0eNV872x1K6F92SzpCkN1hFMgaB |
+
 TODO:
 
 - Figure out if it's worth it to go lvgl pro?
